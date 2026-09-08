@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Local Code Verifier">
+  <defs>
+    <linearGradient id="background" x1="72" y1="56" x2="440" y2="456" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#172554" />
+      <stop offset="1" stop-color="#08111f" />
+    </linearGradient>
+    <linearGradient id="shield" x1="148" y1="118" x2="360" y2="394" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#75a5ff" />
+      <stop offset="1" stop-color="#155eef" />
+    </linearGradient>
+  </defs>
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="url(#background)" />
+  <path
+    d="M256 90 384 138v96c0 86-52 154-128 190-76-36-128-104-128-190v-96l128-48Z"
+    fill="url(#shield)"
+  />
+  <path d="m190 251 43 43 92-102" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="38" />
+</svg>

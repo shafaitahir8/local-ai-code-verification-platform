@@ -1,0 +1,184 @@
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import axe from 'axe-core';
+import { describe, expect, it, vi } from 'vitest';
+
+import { App } from '../src/App.js';
+import { createMockEngineClient } from '../src/engine/index.js';
+
+describe('desktop dashboard', () => {
+  it('shows the empty first-launch workflow before a repository is selected', () => {
+    render(
+      <App client={createMockEngineClient({ latencyMs: 0 })} pickRepository={async () => null} />,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Open a repository' })).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'First launch workflow' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open project' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Browse…' })).toBeEnabled();
+  });
+
+  it('communicates the loading state while repository evidence is requested', async () => {
+    render(
+      <App
+        client={createMockEngineClient({ latencyMs: 80 })}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\loading-project"
+      />,
+    );
+
+    const heading = await screen.findByRole('heading', { name: /Inspecting repository/u });
+    expect(heading.closest('[aria-busy="true"]')).not.toBeNull();
+    expect(await screen.findByRole('heading', { name: 'loading-project' })).toBeInTheDocument();
+  });
+
+  it('opens a repository and presents project, Git, checks, and history evidence', async () => {
+    const user = userEvent.setup();
+    render(
+      <App client={createMockEngineClient({ latencyMs: 0 })} pickRepository={async () => null} />,
+    );
+
+    const path = screen.getByRole('textbox', { name: 'Repository path' });
+    await user.type(path, 'C:\\work\\atlas-web');
+    await user.click(screen.getByRole('button', { name: 'Open project' }));
+
+    expect(await screen.findByRole('heading', { name: 'atlas-web' })).toBeInTheDocument();
+    expect(screen.getByText('feature/session-hardening')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Current changes' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Configured checks' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Recent runs' })).toBeInTheDocument();
+  });
+
+  it('initializes a discovered configuration before enabling verification', async () => {
+    const user = userEvent.setup();
+    render(
+      <App
+        client={createMockEngineClient({ latencyMs: 0, configExists: false })}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\new-project"
+      />,
+    );
+
+    const initialize = await screen.findByRole('button', { name: 'Initialize project' });
+    expect(screen.getByRole('button', { name: 'Run verification' })).toBeDisabled();
+    await user.click(initialize);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Run verification' })).toBeEnabled();
+    });
+    expect(screen.getByRole('region', { name: 'Configured checks' })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['PASS', '48 tests passed', 'Ready for merge'],
+    ['WARN', '1 warning found', 'Review recommended'],
+    ['BLOCK', '47 tests passed', 'Merge blocked'],
+  ] as const)(
+    'renders the engine-provided %s result and streamed evidence',
+    async (scenario, expectedOutput, expectedHeadline) => {
+      const user = userEvent.setup();
+      render(
+        <App
+          client={createMockEngineClient({ latencyMs: 0, gateScenario: scenario })}
+          pickRepository={async () => null}
+          initialRepository={`C:\\work\\${scenario.toLowerCase()}-project`}
+        />,
+      );
+
+      const run = await screen.findByRole('button', { name: 'Run verification' });
+      await user.click(run);
+
+      expect(await screen.findByText(new RegExp(expectedOutput, 'u'))).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: expectedHeadline })).toBeInTheDocument();
+      expect(screen.getByText(`Quality gate: ${scenario}`)).toBeInTheDocument();
+    },
+  );
+
+  it('shows a running state and interrupts the active request from Stop run', async () => {
+    const user = userEvent.setup();
+    render(
+      <App
+        client={createMockEngineClient({ latencyMs: 60 })}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\running-project"
+      />,
+    );
+
+    const run = await screen.findByRole('button', { name: 'Run verification' });
+    await user.click(run);
+
+    expect(await screen.findByRole('heading', { name: 'Collecting evidence' })).toBeInTheDocument();
+    const stop = screen.getByRole('button', { name: 'Stop run' });
+    expect(screen.getByText('Running configured checks')).toBeInTheDocument();
+    await user.click(stop);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('INTERRUPTED');
+  });
+
+  it('renders a structured engine error without replacing it with a gate', async () => {
+    const user = userEvent.setup();
+    render(
+      <App
+        client={createMockEngineClient({ latencyMs: 0, failMethod: 'verification.run' })}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\error-project"
+      />,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Run verification' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'MOCK_ERROR: Mock failure while calling verification.run.',
+    );
+  });
+
+  it('opens a persisted historical run and returns to the latest result', async () => {
+    const user = userEvent.setup();
+    render(
+      <App
+        client={createMockEngineClient({ latencyMs: 0, gateScenario: 'PASS' })}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\history-project"
+      />,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Open run mock-warn-003, WARN' }));
+
+    expect(screen.getByText('Viewing saved run mock-warn-003')).toBeInTheDocument();
+    expect(screen.getByText('Viewing persisted run mock-warn-003')).toBeInTheDocument();
+    expect(screen.getByText('Quality gate: WARN')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Run verification' })).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Return to latest' }));
+    await waitFor(() => {
+      expect(screen.queryByText('Viewing persisted run mock-warn-003')).not.toBeInTheDocument();
+    });
+    expect(screen.getByText('Quality gate: PASS')).toBeInTheDocument();
+  });
+
+  it('supports the open-project keyboard shortcut and restores browse-button focus', async () => {
+    const user = userEvent.setup();
+    const picker = vi.fn(async () => 'C:\\work\\keyboard-project');
+    render(<App client={createMockEngineClient({ latencyMs: 0 })} pickRepository={picker} />);
+
+    await user.keyboard('{Control>}o{/Control}');
+
+    expect(picker).toHaveBeenCalledOnce();
+    expect(await screen.findByRole('heading', { name: 'keyboard-project' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Browse…' })).toHaveFocus();
+  });
+
+  it('has no automatically detectable accessibility violations on first launch', async () => {
+    const { container } = render(
+      <App client={createMockEngineClient({ latencyMs: 0 })} pickRepository={async () => null} />,
+    );
+    const result = await axe.run(container, {
+      rules: {
+        // JSDOM cannot calculate rendered foreground/background contrast.
+        'color-contrast': { enabled: false },
+      },
+    });
+
+    expect(result.violations).toEqual([]);
+  });
+});

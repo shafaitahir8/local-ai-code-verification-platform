@@ -1,0 +1,16 @@
+version: 1
+project:
+  name: fixture-basic-pass
+suites:
+  test:
+    type: test
+    command: npm test
+    failure_policy: block
+  lint:
+    type: lint
+    command: npm run lint
+    failure_policy: warn
+  build:
+    type: build
+    command: npm run build
+    failure_policy: block

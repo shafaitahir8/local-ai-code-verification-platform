@@ -1,0 +1,37 @@
+{
+  "name": "@verify/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "verify": "./dist/index.js"
+  },
+  "exports": {
+    ".": "./src/program.ts"
+  },
+  "scripts": {
+    "build": "tsup --config tsup.config.ts",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "dev": "tsx src/index.ts",
+    "lint": "eslint src tests tsup.config.ts",
+    "test": "pnpm build && vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@verify/adapter-generic-command": "workspace:*",
+    "@verify/config": "workspace:*",
+    "@verify/core": "workspace:*",
+    "@verify/domain": "workspace:*",
+    "@verify/policy": "workspace:*",
+    "@verify/protocol": "workspace:*",
+    "@verify/repository": "workspace:*",
+    "@verify/storage": "workspace:*",
+    "@verify/verification": "workspace:*",
+    "better-sqlite3": "13.0.3",
+    "commander": "15.0.0",
+    "drizzle-orm": "0.45.2",
+    "yaml": "2.8.1",
+    "zod": "4.5.4"
+  }
+}

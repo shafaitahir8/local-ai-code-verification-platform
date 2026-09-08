@@ -1,0 +1,38 @@
+{
+  "name": "local-code-verifier",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local-first deterministic verification gate for software repositories.",
+  "type": "module",
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "clean": "turbo run clean",
+    "dev": "turbo run dev --parallel",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "test:coverage": "turbo run test:coverage",
+    "typecheck": "turbo run typecheck",
+    "verify": "pnpm --filter @verify/cli dev",
+    "validate": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.13.3",
+    "@vitest/coverage-v8": "5.0.0",
+    "eslint": "10.10.0",
+    "pnpm": "11.22.0",
+    "prettier": "3.9.6",
+    "tsup": "8.5.1",
+    "tsx": "4.23.13",
+    "turbo": "2.10.12",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0"
+  }
+}

@@ -1,0 +1,12 @@
+version: 1
+project:
+  name: fixture-failing-build
+suites:
+  test:
+    type: test
+    command: npm test
+    failure_policy: block
+  build:
+    type: build
+    command: npm run build
+    failure_policy: block

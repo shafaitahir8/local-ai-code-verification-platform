@@ -1,0 +1,120 @@
+import {
+  decodeRequestLine,
+  encodeError,
+  encodeEvent,
+  encodeResult,
+  PROTOCOL_VERSION,
+} from '@verify/protocol';
+import { describe, expect, it, vi } from 'vitest';
+
+import {
+  ProtocolEngineClient,
+  createMockEngineClient,
+  type EngineRequestError,
+  type EngineTransport,
+} from '../src/engine/index.js';
+
+describe('ProtocolEngineClient', () => {
+  it('streams versioned events and returns the typed terminal result', async () => {
+    const transport: EngineTransport = {
+      request: async (_request, onChunk) => {
+        onChunk(
+          encodeEvent({
+            protocolVersion: PROTOCOL_VERSION,
+            id: 'fixed-id',
+            event: 'check.output',
+            data: {
+              runId: 'run-1',
+              checkId: 'test',
+              stream: 'stdout',
+              chunk: 'passing\n',
+              timestamp: '2026-09-07T12:00:00.000Z',
+            },
+          }),
+        );
+        onChunk(
+          encodeResult('runs.list', {
+            protocolVersion: PROTOCOL_VERSION,
+            id: 'fixed-id',
+            result: { runs: [] },
+          }),
+        );
+      },
+    };
+    const event = vi.fn();
+    const client = new ProtocolEngineClient(transport, { createRequestId: () => 'fixed-id' });
+
+    await expect(
+      client.request('runs.list', { repository: '/repo' }, { onEvent: event }),
+    ).resolves.toEqual({ runs: [] });
+    expect(event).toHaveBeenCalledWith(expect.objectContaining({ event: 'check.output' }));
+  });
+
+  it('turns structured engine errors into EngineRequestError', async () => {
+    const transport: EngineTransport = {
+      request: async (_request, onChunk) => {
+        onChunk(
+          encodeError({
+            protocolVersion: PROTOCOL_VERSION,
+            id: 'fixed-id',
+            error: { code: 'CONFIG_ERROR', message: 'Configuration is invalid.' },
+          }),
+        );
+      },
+    };
+    const client = new ProtocolEngineClient(transport, { createRequestId: () => 'fixed-id' });
+
+    await expect(client.request('config.get', { repository: '/repo' })).rejects.toEqual(
+      expect.objectContaining<Partial<EngineRequestError>>({
+        name: 'EngineRequestError',
+        code: 'CONFIG_ERROR',
+        message: 'Configuration is invalid.',
+      }),
+    );
+  });
+
+  it('preserves the exact normalized run across the GUI protocol-client boundary', async () => {
+    const repository = 'C:\\work\\equivalence-project';
+    const expected = await createMockEngineClient({ latencyMs: 0, gateScenario: 'WARN' }).request(
+      'verification.run',
+      { repository },
+    );
+    const transport: EngineTransport = {
+      request: async (requestLine, onChunk) => {
+        const request = decodeRequestLine(requestLine);
+        expect(request).toMatchObject({
+          protocolVersion: PROTOCOL_VERSION,
+          id: 'equivalence-id',
+          method: 'verification.run',
+          params: { repository },
+        });
+        onChunk(
+          encodeEvent({
+            protocolVersion: PROTOCOL_VERSION,
+            id: request.id,
+            event: 'run.completed',
+            data: { run: expected },
+          }),
+        );
+        onChunk(
+          encodeResult('verification.run', {
+            protocolVersion: PROTOCOL_VERSION,
+            id: request.id,
+            result: expected,
+          }),
+        );
+      },
+    };
+    const event = vi.fn();
+    const client = new ProtocolEngineClient(transport, {
+      createRequestId: () => 'equivalence-id',
+    });
+
+    const actual = await client.request('verification.run', { repository }, { onEvent: event });
+
+    expect(actual).toStrictEqual(expected);
+    expect(event).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'run.completed', data: { run: expected } }),
+    );
+  });
+});

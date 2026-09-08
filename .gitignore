@@ -1,0 +1,63 @@
+# Dependencies and build caches
+node_modules/
+.pnpm-store/
+.turbo/
+dist/
+target/
+**/target/
+*.tsbuildinfo
+
+# Tests, reports, and temporary files
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+.tmp/
+tmp/
+temp/
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*.pid
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Operating systems and editors
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+
+# Local verifier state
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+
+# Tauri generated files, sidecars, installers, and platform output
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/binaries/
+*.exe
+*.dll
+*.pdb
+*.msi
+*.msix
+*.dmg
+*.AppImage
+*.deb
+*.rpm

@@ -1,0 +1,153 @@
+import type { ProjectConfigPreview, ProjectConfigV1, ProjectDiscovery } from '@verify/config';
+import type { RepositoryChange, VerificationRun } from '@verify/domain';
+import { describe, expect, it } from 'vitest';
+
+import { NoVerificationRunError, VerifierApplication } from '../src/index.js';
+import type {
+  ConfigurationPort,
+  RepositoryPort,
+  RunRepositoryPort,
+  VerificationExecutorPort,
+} from '../src/index.js';
+
+const root = '/repo';
+const config: ProjectConfigV1 = {
+  version: 1,
+  project: { name: 'example' },
+  suites: {
+    test: { type: 'test', command: 'npm test', failure_policy: 'block' },
+  },
+};
+const discovery: ProjectDiscovery = {
+  repositoryRoot: root,
+  projectName: 'example',
+  projectTypes: ['node'],
+  markers: ['package.json'],
+  node: { packageManager: 'npm', packageName: 'example', scripts: { test: 'vitest' } },
+  python: null,
+  suggestedSuites: [
+    {
+      id: 'test',
+      type: 'test',
+      command: 'npm test',
+      failure_policy: 'block',
+      reason: 'package.json defines test.',
+    },
+  ],
+  warnings: [],
+};
+
+function dependencies() {
+  const saved: VerificationRun[] = [];
+  const configuration: ConfigurationPort = {
+    exists: async () => true,
+    load: async () => config,
+    preview: async (): Promise<ProjectConfigPreview> => ({
+      path: '/repo/.verify/project.yml',
+      exists: false,
+      discovery,
+      suggestedConfig: config,
+    }),
+    discover: async () => discovery,
+    initialize: async (options) => ({
+      path: '/repo/.verify/project.yml',
+      config: options.config ?? config,
+      overwritten: false,
+    }),
+    path: () => '/repo/.verify/project.yml',
+  };
+  const change: RepositoryChange = {
+    repositoryRoot: root,
+    branch: 'main',
+    head: { kind: 'branch', name: 'main' },
+    ahead: 0,
+    behind: 0,
+    filesChanged: 0,
+    stagedFiles: 0,
+    unstagedFiles: 0,
+    additions: 0,
+    deletions: 0,
+    hasUnknownStatistics: false,
+    files: [],
+  };
+  const repository: RepositoryPort = {
+    resolveRoot: async () => root,
+    inspect: async () => change,
+  };
+  const verification: VerificationExecutorPort = {
+    run: async () => ({
+      startedAt: '2026-01-01T00:00:00.000Z',
+      completedAt: '2026-01-01T00:00:01.000Z',
+      durationMs: 1_000,
+      interrupted: false,
+      results: [
+        {
+          id: 'test',
+          name: 'test',
+          type: 'test',
+          command: 'npm test',
+          failurePolicy: 'block',
+          status: 'passed',
+          startedAt: '2026-01-01T00:00:00.000Z',
+          completedAt: '2026-01-01T00:00:01.000Z',
+          durationMs: 1_000,
+          exitCode: 0,
+          findings: [],
+          artifacts: [],
+        },
+      ],
+    }),
+  };
+  const runs: RunRepositoryPort = {
+    saveRun: async (run) => {
+      const persisted = { ...run, projectId: 'project-1' };
+      saved.unshift(persisted);
+      return persisted;
+    },
+    getLatestRun: async () => saved[0] ?? null,
+    listRuns: async (_repositoryRoot, limit = 20) => saved.slice(0, limit),
+  };
+  return { configuration, repository, verification, runs, saved };
+}
+
+describe('VerifierApplication', () => {
+  it('initializes from a discovered and user-reviewable preview', async () => {
+    const ports = dependencies();
+    const application = new VerifierApplication(ports);
+
+    const result = await application.initializeProject({ repository: root });
+
+    expect(result.config).toEqual(config);
+    expect(result.overwritten).toBe(false);
+  });
+
+  it('evaluates and persists exactly the run it returns', async () => {
+    const ports = dependencies();
+    const application = new VerifierApplication({
+      ...ports,
+      createRunId: () => 'run-1',
+      now: () => new Date('2026-01-01T00:00:02.000Z'),
+    });
+
+    const run = await application.runVerification({ repository: root });
+
+    expect(run.id).toBe('run-1');
+    expect(run.projectId).toBe('project-1');
+    expect(run.gate?.status).toBe('PASS');
+    expect(ports.saved).toEqual([run]);
+    await expect(application.evaluateLatestGate(root)).resolves.toEqual(run.gate);
+  });
+
+  it('uses one history store for all interfaces', async () => {
+    const ports = dependencies();
+    const application = new VerifierApplication(ports);
+    await application.runVerification({ repository: root });
+
+    await expect(application.getRunHistory(root, 1)).resolves.toHaveLength(1);
+  });
+
+  it('reports an absent latest run explicitly', async () => {
+    const application = new VerifierApplication(dependencies());
+    await expect(application.getLatestRun(root)).rejects.toBeInstanceOf(NoVerificationRunError);
+  });
+});
