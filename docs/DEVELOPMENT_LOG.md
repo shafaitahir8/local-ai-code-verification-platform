@@ -926,3 +926,35 @@ Next safe step:
 
 - Stage only the audited source/docs/workflow/smoke files and both lockfiles, then review
   `git diff --cached` before committing.
+
+## 2026-09-10 — Hosted v0.1.0 CI validation start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Configured the empty public GitHub repository as `origin` and confirmed local `main` contains the
+  Iteration 4.1 release commit.
+- Added the missing workspace formatting command to the hosted validation matrix before the first
+  push.
+
+Affected:
+
+- GitHub Actions validation workflow and hosted release evidence only; Iteration 4.1 product
+  architecture and contracts are unchanged.
+
+Validated:
+
+- Local working tree began clean at `bcfd811451156696935af3396c8acd8d90d5c39d`.
+- `origin` resolves to `shafaitahir8/local-ai-code-verification-platform` and contains no branches or
+  tags before the initial push.
+
+Remaining:
+
+- Validate and commit the CI coverage correction, push `main`, and monitor the hosted matrix plus
+  native Windows package/smoke job on the exact pushed SHA.
+- Do not create `v0.1.0` until hosted CI succeeds.
+
+Next safe step:
+
+- Run focused formatting/workflow checks, review the diff, and commit the CI-only correction.
