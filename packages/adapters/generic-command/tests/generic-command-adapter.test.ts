@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -77,7 +77,7 @@ describe('GenericCommandAdapter contract', () => {
         createCheck(nodeCommand('process.stdout.write(process.cwd())')),
         { repositoryRoot: directory },
       );
-      expect(result.stdout?.toLowerCase()).toBe(directory.toLowerCase());
+      expect(result.stdout?.toLowerCase()).toBe((await realpath(directory)).toLowerCase());
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

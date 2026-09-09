@@ -1,6 +1,6 @@
-import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, normalize, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 
@@ -463,7 +463,7 @@ describe('actual CLI workflow', () => {
     expect(json.stderr).toBe('');
     expect(json.stdout.trim().split(/\r?\n/u)).toHaveLength(1);
     expect(JSON.parse(json.stdout)).toMatchObject({
-      repositoryRoot: repository,
+      repositoryRoot: normalize(await realpath(repository)),
       status: 'completed',
       gate: { status: 'PASS' },
     });

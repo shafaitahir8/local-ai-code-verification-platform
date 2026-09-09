@@ -1053,3 +1053,132 @@ Remaining:
 Next safe step:
 
 - Review and commit the three-file fix, push `main`, and monitor the new hosted run.
+
+## 2026-09-10 — Hosted v0.1.0 CI attempt 2
+
+Status: IN PROGRESS
+
+Completed:
+
+- Reviewed hosted run `34399655723` on candidate
+  `18b277ee59e14841b8361b851c4fb4bb9917665b` through its completed jobs and steps.
+- Confirmed Ubuntu completed the full validation sequence before matrix fail-fast cancellation.
+
+Affected:
+
+- Generic-command adapter contract test portability only; production behavior and Iteration 4.1
+  contracts remain unchanged.
+
+Validated:
+
+- macOS installation, formatting, lint, and typecheck passed before a test assertion compared
+  `/tmp` with its canonical `/private/tmp` path.
+- Windows installation and formatting passed before fail-fast cancellation; the dependent native
+  package/smoke job was skipped and uploaded no artifact.
+
+Remaining:
+
+- Correct the remaining canonical temporary-directory assertion, rerun local validation, and push a
+  separate fix commit.
+- Hosted native Windows validation and the `v0.1.0` tag remain pending.
+
+Next safe step:
+
+- Complete the repository-wide temporary-path assertion audit, then compare the command's reported
+  working directory with the filesystem-canonical temporary directory.
+
+## 2026-09-10 — Hosted CI portability fixes, round 2
+
+Status: COMPLETE
+
+Completed:
+
+- Canonicalized the generic-command child working-directory assertion and the built-CLI JSON
+  repository-root expectation for macOS `/tmp` aliases.
+- Audited all remaining temporary-directory assertions; none other crosses a Git or child-process
+  canonicalization boundary.
+
+Affected:
+
+- Generic-command adapter contract test, CLI integration test, and recovery journal only; no
+  production source or architecture changed.
+
+Validated:
+
+- Focused generic-command tests: 9/9 passed; typecheck, Prettier, and ESLint passed.
+- Focused CLI tests: 18/18 passed; typecheck, Prettier, and ESLint passed.
+- Sequential workspace `format:check`, lint, typecheck, test, and build: passed (22/22 validation
+  tasks and 12/12 build tasks).
+- `git diff --check`: passed before the final journal entry.
+
+Remaining:
+
+- Review, commit, and push this focused hosted-CI fix, then require the complete hosted validation
+  matrix and native Windows package/smoke job to pass on the new SHA.
+- Do not create `v0.1.0` until the hosted native job succeeds and uploads its artifact.
+
+Next safe step:
+
+- Recheck the final diff and formatting, create a separate portability-fix commit, push `main`, and
+  monitor the new hosted workflow run through completion.
+
+## 2026-09-10 — Hosted CI canonical-path fixes
+
+Status: COMPLETE
+
+Completed:
+
+- Canonicalized the generic-command child `cwd` expectation and the built CLI's real-Git root
+  expectation for macOS `/tmp` aliases.
+- Audited all remaining temporary-directory assertions; none cross another canonicalizing process.
+
+Affected:
+
+- Generic-command adapter contract test, CLI integration test, and recovery journal only.
+
+Validated:
+
+- Focused Prettier and ESLint checks: passed.
+- Generic-command tests: 9/9 passed; typecheck passed.
+- CLI integration tests: 18/18 passed; typecheck passed.
+- `git diff --check`: passed.
+
+Remaining:
+
+- Run the complete sequential workspace handoff validation before committing and pushing this fix.
+- Hosted native Windows validation and the `v0.1.0` tag remain pending.
+
+Next safe step:
+
+- Run `pnpm format:check`, lint, typecheck, tests, and build sequentially via Corepack.
+
+## 2026-09-10 — Hosted CI canonical-path fix validation
+
+Status: COMPLETE
+
+Completed:
+
+- Completed the full sequential workspace handoff gate after both canonical-path fixes.
+
+Affected:
+
+- Validation evidence only; the candidate remains limited to two test assertions and recovery-log
+  checkpoints.
+
+Validated:
+
+- `pnpm format:check`: passed.
+- `pnpm lint`: 22/22 tasks passed.
+- `pnpm typecheck`: 22/22 tasks passed.
+- `pnpm test`: 22/22 tasks passed, including CLI 18/18 and generic-command 9/9.
+- `pnpm build`: 12/12 tasks passed.
+- Final focused Prettier check and `git diff --check`: passed.
+
+Remaining:
+
+- Commit and push the focused fix, then require hosted validation and the dependent native Windows
+  package/smoke job to pass on the exact pushed SHA.
+
+Next safe step:
+
+- Stage the three intended files, inspect the cached diff, commit, push, and monitor GitHub Actions.
