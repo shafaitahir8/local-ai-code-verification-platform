@@ -958,3 +958,98 @@ Remaining:
 Next safe step:
 
 - Run focused formatting/workflow checks, review the diff, and commit the CI-only correction.
+
+## 2026-09-10 — Hosted v0.1.0 CI attempt 1
+
+Status: IN PROGRESS
+
+Completed:
+
+- Pushed `main` and reviewed hosted run `34398709068` on candidate
+  `1ef09614465f6d5452745a29a0e40b7f3be8c7e4` at job and step level.
+- Confirmed frozen installation, formatting, lint, and typecheck passed on macOS before its test
+  failure.
+
+Affected:
+
+- Cross-platform repository and desktop tests; product behavior and Iteration 4.1 contracts remain
+  unchanged.
+
+Validated:
+
+- macOS exposed a `/tmp` versus canonical `/private/tmp` expectation in the real-Git test.
+- Ubuntu exposed a timing-dependent desktop test that attempted to click an intentionally disabled
+  repository button while verification was active.
+- Windows validation was cancelled by matrix fail-fast; the dependent native Windows job was
+  skipped and no artifact was uploaded.
+
+Remaining:
+
+- Make the two tests exercise canonical filesystem and supported active-run navigation behavior,
+  rerun affected/full local validation, then push a separate fix commit.
+- Hosted native Windows validation and the `v0.1.0` tag remain pending.
+
+Next safe step:
+
+- Canonicalize the temporary Git-root expectation and drive repository switching through the
+  existing keyboard picker path that aborts the active run.
+
+## 2026-09-10 — Hosted CI portability fixes
+
+Status: COMPLETE
+
+Completed:
+
+- Made the real-Git assertion account for macOS filesystem path canonicalization without changing
+  repository behavior.
+- Made the desktop race test use the supported keyboard repository picker, which cancels the active
+  run before loading the next project.
+
+Affected:
+
+- Repository integration test, desktop application test, and no production implementation files.
+
+Validated:
+
+- Focused Prettier and ESLint checks: passed.
+- Repository tests: 11/11 passed.
+- Desktop tests: 19/19 passed.
+
+Remaining:
+
+- Run the complete local handoff sequence, commit this focused fix separately, push, and monitor a
+  new hosted run through the native Windows job.
+
+Next safe step:
+
+- Run workspace format, lint, typecheck, tests, and build sequentially.
+
+## 2026-09-10 — Hosted CI portability fix validation
+
+Status: COMPLETE
+
+Completed:
+
+- Revalidated the complete workspace after correcting the two hosted cross-platform test failures.
+
+Affected:
+
+- Repository and desktop tests plus the recovery journal; production source remains unchanged.
+
+Validated:
+
+- `pnpm format:check`: passed.
+- `pnpm lint`: 22/22 Turbo tasks plus root scripts passed.
+- `pnpm typecheck`: 22/22 tasks passed.
+- `pnpm test`: 22/22 tasks passed; affected repository 11/11 and desktop 19/19 tests executed.
+- `pnpm build`: 12/12 tasks passed.
+- `git diff --check`: passed.
+
+Remaining:
+
+- Commit and push the focused test fixes, then require a fully successful hosted matrix and native
+  Windows package/smoke job on the new SHA.
+
+Next safe step:
+
+- Review and commit the three-file fix, push `main`, and monitor the new hosted run.

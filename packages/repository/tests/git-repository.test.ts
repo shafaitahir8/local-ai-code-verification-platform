@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, normalize } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -172,7 +172,7 @@ describe('real Git inspection', () => {
 
     const inspection = await new GitRepositoryService(git).inspect(root);
 
-    expect(inspection.repositoryRoot).toBe(normalize(root));
+    expect(inspection.repositoryRoot).toBe(normalize(await realpath(root)));
     expect(inspection.branch).toBe('main');
     expect(inspection.filesChanged).toBe(3);
     expect(inspection.stagedFiles).toBe(1);

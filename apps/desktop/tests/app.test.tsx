@@ -121,10 +121,11 @@ describe('desktop dashboard', () => {
 
   it('does not let a cancelled run overwrite a newly opened repository', async () => {
     const user = userEvent.setup();
+    const nextRepository = 'C:\\work\\new-project';
     render(
       <App
         client={createMockEngineClient({ latencyMs: 100 })}
-        pickRepository={async () => null}
+        pickRepository={async () => nextRepository}
         initialRepository="C:\\work\\old-project"
       />,
     );
@@ -132,10 +133,7 @@ describe('desktop dashboard', () => {
     await user.click(await screen.findByRole('button', { name: 'Run verification' }));
     expect(await screen.findByRole('heading', { name: 'Collecting evidence' })).toBeInTheDocument();
 
-    const path = screen.getByRole('textbox', { name: 'Repository path' });
-    await user.clear(path);
-    await user.type(path, 'C:\\work\\new-project');
-    await user.click(screen.getByRole('button', { name: 'Inspect again' }));
+    await user.keyboard('{Control>}o{/Control}');
 
     expect(await screen.findByRole('heading', { name: 'new-project' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Ready for merge' })).toBeInTheDocument();
