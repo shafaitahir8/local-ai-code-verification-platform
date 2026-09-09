@@ -1182,3 +1182,92 @@ Remaining:
 Next safe step:
 
 - Stage the three intended files, inspect the cached diff, commit, push, and monitor GitHub Actions.
+
+## 2026-09-10 — Hosted v0.1.0 CI attempt 3
+
+Status: IN PROGRESS
+
+Completed:
+
+- Pushed and reviewed hosted run `34400832864` on candidate
+  `abe0eb583b969d79b14b3ed5940af2cc9dd643eb`.
+- Confirmed Ubuntu and macOS completed installation, formatting, lint, typecheck, tests, and build.
+
+Affected:
+
+- Filesystem-identity assertions in hosted tests only; production behavior remains unchanged.
+
+Validated:
+
+- Windows completed installation, formatting, lint, and typecheck before the generic-command test
+  compared the same temporary directory's long and 8.3 short path spellings.
+- The native Windows package/smoke job was skipped and no release artifact was produced.
+
+Remaining:
+
+- Compare reported repository/working-directory paths by canonical filesystem identity on both
+  sides, rerun focused and full local validation, then push a separate test fix.
+- Hosted native Windows validation and the `v0.1.0` tag remain pending.
+
+Next safe step:
+
+- Update both subprocess path assertions to canonicalize their actual and expected values before
+  comparison, preserving the same-directory contract across macOS aliases and Windows 8.3 names.
+
+## 2026-09-10 — Cross-platform filesystem-identity assertions
+
+Status: COMPLETE
+
+Completed:
+
+- Canonicalized both the reported and expected paths in the generic-command and built-CLI
+  integration assertions, covering macOS aliases and Windows 8.3 names without weakening their
+  same-directory contract.
+
+Affected:
+
+- Generic-command adapter contract test, CLI integration test, and recovery journal only.
+
+Validated:
+
+- Focused Prettier and ESLint checks: passed.
+- Generic-command tests: 9/9 passed; typecheck passed.
+- CLI tests: 18/18 passed; typecheck passed.
+
+Remaining:
+
+- Run the complete sequential workspace handoff gate, commit this focused follow-up, and require a
+  new hosted run to reach and pass the native Windows package/smoke job.
+
+Next safe step:
+
+- Run workspace format, lint, typecheck, tests, and build sequentially before committing.
+
+## 2026-09-10 — Filesystem-identity fix validation
+
+Status: COMPLETE
+
+Completed:
+
+- Revalidated the complete workspace after canonicalizing both sides of subprocess path assertions.
+
+Affected:
+
+- Validation evidence only; no additional source behavior changed.
+
+Validated:
+
+- `pnpm format:check`: passed.
+- `pnpm lint`: 22/22 tasks passed.
+- `pnpm typecheck`: 22/22 tasks passed.
+- `pnpm test`: 22/22 tasks passed.
+- `pnpm build`: 12/12 tasks passed.
+
+Remaining:
+
+- Commit and push this test-only follow-up, then monitor hosted validation and native Windows
+  packaging/smoke on the exact new SHA.
+
+Next safe step:
+
+- Review the final three-file diff, commit it separately, push `main`, and monitor GitHub Actions.

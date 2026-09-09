@@ -1,6 +1,6 @@
 import { cp, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, normalize, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 
@@ -462,11 +462,14 @@ describe('actual CLI workflow', () => {
     expect(json.code).toBe(0);
     expect(json.stderr).toBe('');
     expect(json.stdout.trim().split(/\r?\n/u)).toHaveLength(1);
-    expect(JSON.parse(json.stdout)).toMatchObject({
-      repositoryRoot: normalize(await realpath(repository)),
+    const run = JSON.parse(json.stdout) as VerificationRun;
+    expect(run).toMatchObject({
       status: 'completed',
       gate: { status: 'PASS' },
     });
+    expect((await realpath(run.repositoryRoot)).toLowerCase()).toBe(
+      (await realpath(repository)).toLowerCase(),
+    );
     expect(json.stdout).not.toContain('Running Unit tests');
   }, 20_000);
 

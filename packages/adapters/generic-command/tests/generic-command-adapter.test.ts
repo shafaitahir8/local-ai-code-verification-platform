@@ -77,7 +77,10 @@ describe('GenericCommandAdapter contract', () => {
         createCheck(nodeCommand('process.stdout.write(process.cwd())')),
         { repositoryRoot: directory },
       );
-      expect(result.stdout?.toLowerCase()).toBe((await realpath(directory)).toLowerCase());
+      const reportedDirectory = result.stdout ?? '';
+      expect((await realpath(reportedDirectory)).toLowerCase()).toBe(
+        (await realpath(directory)).toLowerCase(),
+      );
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
