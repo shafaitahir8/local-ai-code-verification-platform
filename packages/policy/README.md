@@ -26,6 +26,8 @@ Quality-gate decision rules and PASS/WARN/BLOCK shell-exit mapping.
 ## Important invariants
 
 - Execution errors and cancellation always block; missing evidence is never treated as a pass.
+- An explicitly interrupted run is BLOCK even if cancellation races with otherwise passing final
+  evidence.
 - A failed `block` check blocks, while a failed `warn` check warns.
 - Warning or skipped evidence yields at least WARN.
 - BLOCK takes precedence over WARN, which takes precedence over PASS.

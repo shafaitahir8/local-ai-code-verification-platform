@@ -19,6 +19,8 @@ const gateHeadline = {
 export function GateHero({ latestGate, run, runPhase, viewingHistory }: GateHeroProps) {
   const gate = run?.gate ?? latestGate?.gate;
   const isRunning = runPhase === 'running' && !viewingHistory;
+  const isCancelling = runPhase === 'cancelling' && !viewingHistory;
+  const isActive = isRunning || isCancelling;
 
   return (
     <section className="gate-hero" aria-labelledby="gate-heading" aria-live="polite">
@@ -29,23 +31,34 @@ export function GateHero({ latestGate, run, runPhase, viewingHistory }: GateHero
         <p className="eyebrow">
           {viewingHistory
             ? 'Saved verification run'
-            : isRunning
+            : isActive
               ? 'Verification running'
               : 'Quality gate'}
         </p>
         <h1 id="gate-heading">
-          {isRunning ? 'Collecting evidence' : gate ? gateHeadline[gate.status] : 'No result yet'}
+          {isCancelling
+            ? 'Saving interrupted run'
+            : isRunning
+              ? 'Collecting evidence'
+              : gate
+                ? gateHeadline[gate.status]
+                : 'No result yet'}
         </h1>
-        {isRunning ? (
-          <StatusBadge status="running" label="Running configured checks" />
+        {isActive ? (
+          <StatusBadge
+            status="running"
+            label={isCancelling ? 'Stopping configured checks' : 'Running configured checks'}
+          />
         ) : gate ? (
           <StatusBadge status={gate.status} label={`Quality gate: ${gate.status}`} />
         ) : (
           <StatusBadge status="unknown" label="Quality gate not evaluated" />
         )}
         <p className="gate-hero__reason">
-          {isRunning
-            ? 'Live output is available below. The engine will provide the final gate.'
+          {isActive
+            ? isCancelling
+              ? 'Waiting for the engine to persist cancelled evidence and release its processes.'
+              : 'Live output is available below. The engine will provide the final gate.'
             : (gate?.reasons.at(0) ??
               'Run verification to produce a deterministic release decision.')}
         </p>

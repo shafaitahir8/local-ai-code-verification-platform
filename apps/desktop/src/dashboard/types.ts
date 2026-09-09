@@ -19,4 +19,4 @@ export interface LiveCheck {
 }
 
 export type LoadPhase = 'empty' | 'loading' | 'ready' | 'error';
-export type RunPhase = 'idle' | 'running' | 'completed' | 'error';
+export type RunPhase = 'idle' | 'running' | 'cancelling' | 'completed' | 'error';

@@ -6,6 +6,6 @@ export {
   SqliteRunRepository,
   StorageCorruptionError,
 } from './sqlite-run-repository.js';
-export type { SqliteRunRepositoryOptions } from './sqlite-run-repository.js';
+export type { SqliteNativeBinding, SqliteRunRepositoryOptions } from './sqlite-run-repository.js';
 export { runStorageMigrations, StorageMigrationError } from './migrations/index.js';
 export type { AppliedStorageMigration, StorageMigrationResult } from './migrations/index.js';

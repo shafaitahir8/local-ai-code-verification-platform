@@ -111,13 +111,15 @@ export class VerifierApplication {
       onEvent:
         request.onEvent === undefined ? undefined : (event) => request.onEvent?.(event, runId),
     });
+    const interrupted = evidence.interrupted || request.signal?.aborted === true;
     const gate = evaluateQualityGate(evidence.results, {
       evaluatedAt: this.#now().toISOString(),
+      ...(interrupted ? { emptyResultStatus: 'BLOCK' as const, interrupted: true } : {}),
     });
     const run: VerificationRun = {
       id: runId,
       repositoryRoot,
-      status: evidence.interrupted ? 'cancelled' : 'completed',
+      status: interrupted ? 'cancelled' : 'completed',
       startedAt: evidence.startedAt,
       completedAt: evidence.completedAt,
       durationMs: evidence.durationMs,

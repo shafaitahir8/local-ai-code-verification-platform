@@ -19,7 +19,10 @@ export function App({ client, initialRepository, pickRepository }: AppProps) {
   const controller = useDashboard(client, initialRepository);
   const [path, setPath] = useState(initialRepository ?? '');
   const browseButton = useRef<HTMLButtonElement>(null);
-  const busy = controller.loadPhase === 'loading' || controller.runPhase === 'running';
+  const busy =
+    controller.loadPhase === 'loading' ||
+    controller.runPhase === 'running' ||
+    controller.runPhase === 'cancelling';
 
   const browse = async () => {
     const selected = await pickRepository();

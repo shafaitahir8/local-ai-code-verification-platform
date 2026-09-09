@@ -117,4 +117,51 @@ describe('ProtocolEngineClient', () => {
       expect.objectContaining({ event: 'run.completed', data: { run: expected } }),
     );
   });
+
+  it('returns a persisted cancelled terminal after the caller requests interruption', async () => {
+    const repository = 'C:\\work\\cancelled-project';
+    const completed = await createMockEngineClient({ latencyMs: 0 }).request('verification.run', {
+      repository,
+    });
+    const cancelled = {
+      ...completed,
+      id: 'cancelled-id',
+      status: 'cancelled' as const,
+      checks: [],
+      gate: {
+        status: 'BLOCK' as const,
+        reasons: ['No verification checks were run.'],
+        evaluatedAt: completed.completedAt ?? completed.startedAt,
+        summary: {
+          total: 0,
+          passed: 0,
+          warning: 0,
+          failed: 0,
+          error: 0,
+          cancelled: 0,
+          skipped: 0,
+        },
+      },
+    };
+    const controller = new AbortController();
+    const transport: EngineTransport = {
+      request: async (_requestLine, onChunk) => {
+        controller.abort();
+        onChunk(
+          encodeResult('verification.run', {
+            protocolVersion: PROTOCOL_VERSION,
+            id: 'cancelled-id',
+            result: cancelled,
+          }),
+        );
+      },
+    };
+    const client = new ProtocolEngineClient(transport, {
+      createRequestId: () => 'cancelled-id',
+    });
+
+    await expect(
+      client.request('verification.run', { repository }, { signal: controller.signal }),
+    ).resolves.toStrictEqual(cancelled);
+  });
 });

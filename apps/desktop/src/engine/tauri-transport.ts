@@ -23,25 +23,26 @@ export class TauriEngineTransport implements EngineTransport {
 
     try {
       signal?.addEventListener('abort', interrupt, { once: true });
-
+      const terminalPromise = invoke<string>('engine_request', { requestLine, onEvent });
       if (interrupted) {
-        throw new EngineRequestError('INTERRUPTED', 'The engine request was interrupted.');
+        interrupt();
       }
 
       let terminalLine: string;
       try {
-        terminalLine = await invoke<string>('engine_request', { requestLine, onEvent });
+        terminalLine = await terminalPromise;
       } catch (error) {
         if (interrupted) {
-          throw new EngineRequestError('INTERRUPTED', 'The engine request was interrupted.');
+          throw new EngineRequestError(
+            'INTERRUPTED',
+            'The engine interruption did not return confirmed persisted evidence.',
+            undefined,
+            { cause: error },
+          );
         }
         throw error;
       }
       onChunk(terminalLine.endsWith('\n') ? terminalLine : `${terminalLine}\n`);
-
-      if (interrupted) {
-        throw new EngineRequestError('INTERRUPTED', 'The engine request was interrupted.');
-      }
     } finally {
       signal?.removeEventListener('abort', interrupt);
     }

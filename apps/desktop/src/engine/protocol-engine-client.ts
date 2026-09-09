@@ -93,6 +93,9 @@ export class ProtocolEngineClient implements EngineClient {
       }
     } catch (error) {
       if (options.signal?.aborted) {
+        if (error instanceof EngineRequestError) {
+          throw error;
+        }
         throw new EngineRequestError(
           'INTERRUPTED',
           'The engine request was interrupted.',

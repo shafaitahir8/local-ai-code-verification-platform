@@ -49,7 +49,29 @@ export interface SqliteRunRepositoryOptions {
   /** Working directory used when a configured database path is relative. */
   readonly cwd?: string;
   readonly busyTimeoutMs?: number;
+  /** Preloaded better-sqlite3 addon used by self-contained executable builds. */
+  readonly nativeBinding?: SqliteNativeBinding;
 }
+
+/** Runtime object exported by the better-sqlite3 native addon. */
+export type SqliteNativeBinding = object;
+
+interface BetterSqlite3OptionsWithObjectBinding extends Omit<
+  BetterSqlite3.Options,
+  'nativeBinding'
+> {
+  readonly nativeBinding?: string | SqliteNativeBinding;
+}
+
+interface BetterSqlite3ConstructorWithObjectBinding {
+  new (
+    filename?: string | Buffer,
+    options?: BetterSqlite3OptionsWithObjectBinding,
+  ): BetterSqlite3.Database;
+}
+
+const BetterSqlite3WithObjectBinding =
+  BetterSqlite3 as unknown as BetterSqlite3ConstructorWithObjectBinding;
 
 export class StorageCorruptionError extends Error {
   public constructor(message: string, options?: ErrorOptions) {
@@ -240,7 +262,10 @@ export class SqliteRunRepository implements RunRepository, ProjectRepository {
       throw new RangeError('busyTimeoutMs must be a non-negative integer.');
     }
 
-    this.#sqlite = new BetterSqlite3(this.databasePath);
+    this.#sqlite = new BetterSqlite3WithObjectBinding(
+      this.databasePath,
+      options.nativeBinding === undefined ? undefined : { nativeBinding: options.nativeBinding },
+    );
     this.#sqlite.pragma('foreign_keys = ON');
     this.#sqlite.pragma(`busy_timeout = ${busyTimeoutMs}`);
     if (this.databasePath !== ':memory:') {

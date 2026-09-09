@@ -17,17 +17,18 @@ evaluates a gate, or persists results.
 
 ## Development
 
-Build the engine first, then start Tauri:
+Tauri's development hook builds the target-specific engine before starting the web frontend and
+native shell:
 
 ```bash
-pnpm --filter @verify/cli build
 pnpm --filter @verify/desktop tauri dev
 ```
 
-The Rust bridge starts `node apps/cli/dist/index.js protocol`, writes one protocol-v1 request,
-streams ordered event frames through a Tauri IPC channel, and returns the terminal frame. Native
-requests are serialized to avoid concurrent migration/bootstrap races. Override the development
-engine only with `VERIFY_ENGINE_COMMAND` and `VERIFY_ENGINE_ARGS_JSON` (a JSON string array).
+The Rust bridge starts the declared `verify-engine` sidecar in protocol mode, writes one protocol-v1
+request, streams ordered event frames through a Tauri IPC channel, and returns the terminal frame.
+Native requests are serialized to avoid concurrent migration/bootstrap races. Debug builds may use
+an explicit `VERIFY_ENGINE_COMMAND` plus `VERIFY_ENGINE_ARGS_JSON` (a JSON string array); release
+builds always resolve the bundled sidecar and ignore those development variables.
 
 `pnpm --filter @verify/desktop dev` runs a browser-only visual preview with deterministic mock data;
 query parameters `?scenario=WARN`, `?scenario=BLOCK`, and `?uninitialized=1` exercise major states.
@@ -36,7 +37,8 @@ That preview does not claim native/core integration.
 ## Allowed dependencies
 
 React, Vite, Tailwind, `@verify/ui`, protocol types/codecs, Tauri's browser API, and a minimal Rust
-shell using Tauri, Tokio process/IO primitives, Serde, and the native folder dialog.
+shell using Tauri, the Tauri shell plugin, Tokio coordination/timing primitives, Serde, the native
+folder dialog, and Windows process APIs for Job Object containment.
 
 ## Forbidden dependencies
 
@@ -55,7 +57,11 @@ headless engine.
 - Status always includes text/icon semantics rather than color alone.
 - Controls remain keyboard reachable with visible focus, focus restoration, live regions, reduced
   motion, high contrast, and light/dark compatibility.
-- Native child PIDs are removed after both success and failure; cancellation targets the process tree.
+- Native sidecar stdout is bounded, UTF-8 NDJSON and is correlated before it crosses the IPC channel.
+- Graceful cancellation first requests a persisted cancelled run over protocol; an unresponsive
+  engine is terminated after a bounded grace period.
+- On Windows, the sidecar and descendants are assigned to a kill-on-close Job Object so fallback
+  cleanup cannot intentionally leave a verification process tree behind.
 
 ## Security and privacy
 
@@ -70,13 +76,15 @@ must remain a projection of engine data rather than an independently versioned g
 
 ## Packaging boundary
 
-The generated app icons and Tauri bundle configuration are present. The development bridge still
-uses the installed Node runtime and a checkout-relative CLI bundle. A distributable installer needs
-a target-specific self-contained engine sidecar declared as `externalBin`; installers produced
-before that work would not be portable away from the checkout.
+`pnpm build:engine:windows` creates
+`src-tauri/binaries/verify-engine-x86_64-pc-windows-msvc.exe`, which Tauri consumes through
+`externalBin`. The generated binary is a build artifact and remains ignored by Git. It embeds the
+Node runtime, the bundled TypeScript engine, and the matching SQLite native addon; the installed app
+does not resolve Node.js or source files from the development checkout.
 
-Native validation also requires Rust/Cargo, MSVC, and Windows SDK libraries. Those prerequisites are
-missing on the current Windows machine, so the native build is explicitly unrun rather than passing.
+Building the Windows package requires Node 24 x64, Rust/Cargo with the MSVC target, the x64 MSVC
+compiler/linker, and a Windows SDK. A source build alone does not satisfy the release gate: the
+installer and its actual installed workflow must also pass the outside-checkout smoke test.
 
 ## Testing
 
@@ -84,10 +92,12 @@ missing on the current Windows machine, so the native build is explicitly unrun 
     pnpm --filter @verify/desktop typecheck
     pnpm --filter @verify/desktop build
     pnpm --filter @verify/desktop desktop:build
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-installed-windows.ps1 ...
 
 The first three commands cover the React/protocol client and browser bundle. The final command is the
 platform-specific native check. Tests explicitly cover empty, loading, running, PASS, WARN, BLOCK,
 error, and historical-run states, plus keyboard behavior, focus return, accessibility scanning, and
-split/coalesced protocol frames. A child-process integration test compares the GUI protocol client
-with CLI JSON output from the same headless engine; no native sidecar smoke result is claimed on this
-machine.
+split/coalesced protocol frames and graceful cancellation state. A child-process integration test
+compares the GUI protocol client with CLI JSON output from the same headless engine. Native Rust,
+sidecar, installer, outside-checkout workflow, Node-independence, persistence, and process-cleanup
+results must be recorded separately because browser tests cannot prove them.

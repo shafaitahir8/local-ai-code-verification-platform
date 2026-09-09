@@ -12,6 +12,11 @@ The desktop must receive live command output and terminal verification results f
 
 Use newline-delimited JSON over a child process's stdin/stdout. Every schema-validated envelope contains protocolVersion 1 and a request id. Requests contain method and params; streaming messages contain event and data; completion contains exactly one result or structured error. Protocol stdout is reserved for frames and diagnostics use stderr.
 
+The server keeps reading frames while an ordinary request executes. Ordinary requests are serialized,
+while the additive `verification.cancel` control request bypasses that queue and targets an active
+`verification.run` by request ID. Request IDs must be unique while active, and end-of-input drains
+all accepted work before the server exits.
+
 ## Reasons
 
 - NDJSON naturally streams progress while remaining simple to inspect and test.
@@ -24,7 +29,11 @@ Use newline-delimited JSON over a child process's stdin/stdout. Every schema-val
 - Any accidental non-protocol stdout output can corrupt framing and must be prevented by tests.
 - Message schemas and event ordering become compatibility contracts.
 - Unsupported versions, malformed frames, unknown methods, and duplicate terminal responses need explicit errors.
+- Active duplicate request IDs are rejected explicitly; unknown, repeated, and post-terminal
+  cancellation targets return `accepted: false`.
 - Packaging must manage the sidecar lifecycle, interruption, crashes, and target-specific executable paths.
+
+Graceful cancellation semantics and persistence are detailed in ADR-008.
 
 ## Alternatives considered
 

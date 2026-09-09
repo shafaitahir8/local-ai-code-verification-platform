@@ -8,6 +8,7 @@ Persists deterministic verification history in a local SQLite database through D
 - `ProjectRepository`: optional project metadata port used by composition roots.
 - `SqliteRunRepository`: SQLite/Drizzle implementation of both ports.
 - `createSqliteRunRepository()`: opens the configured database and applies explicit migrations.
+- `SqliteNativeBinding`: optional preloaded addon boundary used by self-contained delivery.
 - `runStorageMigrations()`: idempotent migration bootstrap for tooling and tests.
 
 ## Allowed dependencies
@@ -36,6 +37,7 @@ and final gate decisions. Repository policy remains exclusively in `.verify/proj
 - Foreign keys are enabled. On file databases, write-ahead logging and a busy timeout are enabled.
 - History is returned newest first and is scoped by normalized repository root.
 - No verification or gate policy is evaluated in this package.
+- A supplied native binding changes only addon loading; schema and persistence behavior are identical.
 
 ## Security and privacy
 

@@ -34,6 +34,10 @@ persistence by the injected run repository.
 
 - A run is evaluated exactly once, and the same normalized value is persisted and returned.
 - Interfaces do not receive a false PASS after configuration, execution, or persistence failure.
+- Interrupted evidence is persisted as a cancelled run; cancellation before the first check yields
+  a BLOCK gate rather than an empty-result WARN.
+- A cancellation accepted as final evidence settles is still persisted as cancelled and cannot
+  retain a PASS gate.
 - Lifecycle events preserve run/check identity and ordering.
 - Core never instantiates concrete infrastructure.
 

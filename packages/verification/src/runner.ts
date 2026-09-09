@@ -112,7 +112,7 @@ export class VerificationRunner {
       completedAt: new Date(completedAtMs).toISOString(),
       durationMs: Math.max(0, completedAtMs - startedAtMs),
       results,
-      interrupted,
+      interrupted: interrupted || request.signal?.aborted === true,
     };
   }
 }

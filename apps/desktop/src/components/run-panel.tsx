@@ -30,6 +30,8 @@ export function RunPanel({
   viewingHistory,
 }: RunPanelProps) {
   const isRunning = runPhase === 'running';
+  const isCancelling = runPhase === 'cancelling';
+  const isActive = isRunning || isCancelling;
   const visibleOutput = viewingHistory
     ? (run?.checks.map((check) => `${check.stdout ?? ''}${check.stderr ?? ''}`).join('') ?? '')
     : output ||
@@ -45,14 +47,16 @@ export function RunPanel({
           <CardDescription>
             {viewingHistory
               ? `Viewing persisted run ${run?.id ?? ''}`
-              : isRunning
-                ? 'Configured commands are running locally.'
-                : 'Execute only the commands declared in repository configuration.'}
+              : isCancelling
+                ? 'Stopping checks and saving interrupted evidence.'
+                : isRunning
+                  ? 'Configured commands are running locally.'
+                  : 'Execute only the commands declared in repository configuration.'}
           </CardDescription>
         </div>
-        {isRunning ? (
-          <Button variant="danger" onClick={onStop}>
-            <StopIcon className="button-icon" /> Stop run
+        {isActive ? (
+          <Button variant="danger" onClick={onStop} disabled={isCancelling}>
+            <StopIcon className="button-icon" /> {isCancelling ? 'Stopping…' : 'Stop run'}
           </Button>
         ) : (
           <Button variant="primary" onClick={onRun} disabled={!configured || viewingHistory}>
@@ -98,7 +102,7 @@ export function RunPanel({
           ) : (
             <div className="compact-empty">
               <span className="muted-text">
-                {isRunning ? 'Results appear as checks complete.' : 'No check results to display.'}
+                {isActive ? 'Results appear as checks complete.' : 'No check results to display.'}
               </span>
             </div>
           )}
@@ -110,7 +114,9 @@ export function RunPanel({
               <TerminalIcon />
               Local output
             </span>
-            {isRunning ? <StatusBadge status="running" label="Streaming" /> : null}
+            {isActive ? (
+              <StatusBadge status="running" label={isCancelling ? 'Stopping' : 'Streaming'} />
+            ) : null}
           </div>
           <pre tabIndex={0}>{visibleOutput || '$ Waiting for a verification run…'}</pre>
         </div>

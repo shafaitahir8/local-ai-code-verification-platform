@@ -2,14 +2,16 @@ import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 
+import type { VerificationRun } from '@verify/domain';
 import {
   decodeResultLine,
   decodeServerMessageLine,
   encodeRequest,
   PROTOCOL_VERSION,
   type ProtocolRequest,
+  type ProtocolServerMessage,
 } from '@verify/protocol';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -21,6 +23,7 @@ const fixturesRoot = resolve(import.meta.dirname, '../../../fixtures');
 const builtCliEntry = resolve(import.meta.dirname, '../dist/index.js');
 const temporaryDirectories: string[] = [];
 const openCompositions: ApplicationComposition[] = [];
+const openProtocolProcesses = new Set<ChildProcessWithoutNullStreams>();
 
 interface CliResult {
   readonly code: number;
@@ -32,6 +35,28 @@ interface CliProcessOptions {
   readonly entry?: string;
   readonly stdin?: string;
   readonly environment?: Readonly<Record<string, string>>;
+}
+
+interface ProtocolRecord {
+  readonly line: string;
+  readonly message: ProtocolServerMessage;
+}
+
+interface ProtocolRecordWaiter {
+  readonly predicate: (record: ProtocolRecord) => boolean;
+  readonly resolve: (record: ProtocolRecord) => void;
+  readonly reject: (error: Error) => void;
+  readonly timeout: ReturnType<typeof setTimeout>;
+}
+
+interface InteractiveProtocolProcess {
+  readonly records: ProtocolRecord[];
+  send(request: ProtocolRequest): void;
+  waitFor(
+    predicate: (record: ProtocolRecord) => boolean,
+    description: string,
+  ): Promise<ProtocolRecord>;
+  finish(): Promise<CliResult>;
 }
 
 async function runCliProcess(
@@ -65,6 +90,139 @@ async function runCliProcess(
     });
     child.stdin.end(options.stdin);
   });
+}
+
+function startProtocolProcess(
+  database: string,
+  environment: Readonly<Record<string, string>> = {},
+): InteractiveProtocolProcess {
+  const child = spawn(process.execPath, [builtCliEntry, 'protocol'], {
+    cwd: resolve(import.meta.dirname, '../../..'),
+    env: { ...process.env, VERIFY_DATABASE_PATH: database, ...environment },
+    stdio: ['pipe', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
+  openProtocolProcesses.add(child);
+
+  const records: ProtocolRecord[] = [];
+  const waiters = new Set<ProtocolRecordWaiter>();
+  let stdout = '';
+  let stderr = '';
+  let pending = '';
+  let decodeFailure: Error | undefined;
+
+  const rejectWaiters = (error: Error): void => {
+    for (const waiter of waiters) {
+      clearTimeout(waiter.timeout);
+      waiter.reject(error);
+    }
+    waiters.clear();
+  };
+
+  const acceptLine = (rawLine: string): void => {
+    const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
+    if (line.trim().length === 0) return;
+
+    let message: ProtocolServerMessage;
+    try {
+      message = decodeServerMessageLine(line);
+    } catch (error) {
+      decodeFailure = error instanceof Error ? error : new Error(String(error));
+      rejectWaiters(decodeFailure);
+      return;
+    }
+
+    const record = { line, message } satisfies ProtocolRecord;
+    records.push(record);
+    for (const waiter of [...waiters]) {
+      if (!waiter.predicate(record)) continue;
+      clearTimeout(waiter.timeout);
+      waiters.delete(waiter);
+      waiter.resolve(record);
+    }
+  };
+
+  child.stdout.on('data', (chunk: Buffer) => {
+    const text = chunk.toString();
+    stdout += text;
+    pending += text;
+    let newline = pending.indexOf('\n');
+    while (newline >= 0) {
+      acceptLine(pending.slice(0, newline));
+      pending = pending.slice(newline + 1);
+      newline = pending.indexOf('\n');
+    }
+  });
+  child.stderr.on('data', (chunk: Buffer) => {
+    stderr += chunk.toString();
+  });
+
+  const closePromise = new Promise<CliResult>((resolvePromise, reject) => {
+    child.once('error', (error) => {
+      rejectWaiters(error);
+      reject(error);
+    });
+    child.once('close', (code) => {
+      openProtocolProcesses.delete(child);
+      if (pending.trim().length > 0) acceptLine(pending);
+      rejectWaiters(new Error(`Protocol process exited with code ${code ?? -1}.`));
+      resolvePromise({ code: code ?? -1, stdout, stderr });
+    });
+  });
+
+  return {
+    records,
+    send: (request) => {
+      child.stdin.write(encodeRequest(request));
+    },
+    waitFor: async (predicate, description) => {
+      const existing = records.find(predicate);
+      if (existing !== undefined) return existing;
+      if (decodeFailure !== undefined) throw decodeFailure;
+
+      return new Promise<ProtocolRecord>((resolveRecord, reject) => {
+        const timeout = setTimeout(() => {
+          waiters.delete(waiter);
+          reject(new Error(`Timed out waiting for ${description}.`));
+        }, 10_000);
+        const waiter: ProtocolRecordWaiter = {
+          predicate,
+          resolve: resolveRecord,
+          reject,
+          timeout,
+        };
+        waiters.add(waiter);
+      });
+    },
+    finish: async () => {
+      child.stdin.end();
+      const result = await closePromise;
+      if (decodeFailure !== undefined) throw decodeFailure;
+      return result;
+    },
+  };
+}
+
+async function terminateTestProcess(child: ChildProcessWithoutNullStreams): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+
+  child.stdin.destroy();
+  if (process.platform === 'win32' && child.pid !== undefined) {
+    await new Promise<void>((resolvePromise) => {
+      const killer = spawn('taskkill.exe', ['/pid', String(child.pid), '/T', '/F'], {
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+      killer.once('error', () => {
+        child.kill('SIGKILL');
+        resolvePromise();
+      });
+      killer.once('close', () => resolvePromise());
+    });
+    return;
+  }
+
+  child.kill('SIGKILL');
 }
 
 async function git(repository: string, ...args: string[]): Promise<void> {
@@ -141,6 +299,8 @@ async function runCli(args: string[], database: string): Promise<CliResult> {
 }
 
 afterEach(async () => {
+  await Promise.all([...openProtocolProcesses].map((child) => terminateTestProcess(child)));
+  openProtocolProcesses.clear();
   while (openCompositions.length > 0) openCompositions.pop()?.close();
   process.exitCode = undefined;
   await Promise.all(
@@ -425,6 +585,392 @@ describe('built child-process protocol', () => {
     const persistedHistory = JSON.parse(history.stdout) as unknown[];
     expect(persistedHistory[0]).toStrictEqual(terminal.result);
   }, 15_000);
+
+  it('persists cancellation sent immediately after the first run frame before any check starts', async () => {
+    const { repository, database } = await fixture('basic-pass');
+    const protocol = startProtocolProcess(database);
+    const runRequest = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'immediate-run',
+      method: 'verification.run',
+      params: { repository },
+    } satisfies ProtocolRequest<'verification.run'>;
+    const cancelRequest = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'immediate-cancel',
+      method: 'verification.cancel',
+      params: { targetRequestId: runRequest.id },
+    } satisfies ProtocolRequest<'verification.cancel'>;
+
+    protocol.send(runRequest);
+    protocol.send(cancelRequest);
+
+    const cancellation = decodeResultLine(
+      'verification.cancel',
+      (
+        await protocol.waitFor(
+          ({ message }) => message.id === cancelRequest.id && 'result' in message,
+          'immediate cancellation acknowledgement',
+        )
+      ).line,
+    );
+    expect(cancellation).toMatchObject({ result: { accepted: true } });
+
+    const terminal = decodeResultLine(
+      'verification.run',
+      (
+        await protocol.waitFor(
+          ({ message }) => message.id === runRequest.id && 'result' in message,
+          'immediately cancelled terminal result',
+        )
+      ).line,
+    );
+    if ('error' in terminal) throw new Error(terminal.error.message);
+    expect(terminal.result).toMatchObject({
+      status: 'cancelled',
+      checks: [],
+      gate: { status: 'BLOCK' },
+    });
+    expect(
+      protocol.records.some(
+        ({ message }) =>
+          message.id === runRequest.id && 'event' in message && message.event === 'check.started',
+      ),
+    ).toBe(false);
+
+    const execution = await protocol.finish();
+    expect(execution).toMatchObject({ code: 0, stderr: '' });
+    const history = JSON.parse(
+      (await runCliProcess(['history', repository, '--json'], database)).stdout,
+    ) as VerificationRun[];
+    expect(history).toContainEqual(terminal.result);
+  }, 15_000);
+
+  it('cancels during command output, persists the terminal run, and starts no later checks', async () => {
+    const { repository, database } = await fixture('basic-pass');
+    const laterCheckMarker = join(repository, 'later-check.marker');
+    await writeFile(
+      join(repository, 'scripts', 'protocol-slow.mjs'),
+      [
+        "process.stdout.write('slow command started\\n');",
+        'setInterval(() => undefined, 1_000);',
+        '',
+      ].join('\n'),
+    );
+    await writeFile(
+      join(repository, 'scripts', 'protocol-later.mjs'),
+      [
+        "import { writeFileSync } from 'node:fs';",
+        "writeFileSync(process.env.VERIFY_LATER_CHECK_MARKER, 'started');",
+        '',
+      ].join('\n'),
+    );
+    await writeFile(
+      join(repository, '.verify', 'project.yml'),
+      [
+        'version: 1',
+        'project:',
+        '  name: protocol-cancellation-fixture',
+        'suites:',
+        '  slow:',
+        '    type: test',
+        '    command: node scripts/protocol-slow.mjs',
+        '    failure_policy: block',
+        '  later:',
+        '    type: test',
+        '    command: node scripts/protocol-later.mjs',
+        '    failure_policy: block',
+        '',
+      ].join('\n'),
+    );
+
+    const protocol = startProtocolProcess(database, {
+      VERIFY_LATER_CHECK_MARKER: laterCheckMarker,
+    });
+
+    const runRequest = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'cancel-during-output',
+      method: 'verification.run',
+      params: { repository },
+    } satisfies ProtocolRequest<'verification.run'>;
+    protocol.send(runRequest);
+    await protocol.waitFor(
+      ({ message }) =>
+        message.id === runRequest.id &&
+        'event' in message &&
+        message.event === 'check.output' &&
+        message.data.checkId === 'slow',
+      'slow-check output',
+    );
+
+    const unknownCancel = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'cancel-unknown',
+      method: 'verification.cancel',
+      params: { targetRequestId: 'missing-run' },
+    } satisfies ProtocolRequest<'verification.cancel'>;
+    const acceptedCancel = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'cancel-active',
+      method: 'verification.cancel',
+      params: { targetRequestId: runRequest.id },
+    } satisfies ProtocolRequest<'verification.cancel'>;
+    const duplicateCancel = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'cancel-active-again',
+      method: 'verification.cancel',
+      params: { targetRequestId: runRequest.id },
+    } satisfies ProtocolRequest<'verification.cancel'>;
+    protocol.send(unknownCancel);
+    protocol.send(acceptedCancel);
+    protocol.send(duplicateCancel);
+
+    const unknownResult = decodeResultLine(
+      'verification.cancel',
+      (
+        await protocol.waitFor(
+          ({ message }) => message.id === unknownCancel.id && 'result' in message,
+          'unknown-target cancellation result',
+        )
+      ).line,
+    );
+    const acceptedResult = decodeResultLine(
+      'verification.cancel',
+      (
+        await protocol.waitFor(
+          ({ message }) => message.id === acceptedCancel.id && 'result' in message,
+          'accepted cancellation result',
+        )
+      ).line,
+    );
+    const duplicateResult = decodeResultLine(
+      'verification.cancel',
+      (
+        await protocol.waitFor(
+          ({ message }) => message.id === duplicateCancel.id && 'result' in message,
+          'duplicate cancellation result',
+        )
+      ).line,
+    );
+    expect(unknownResult).toMatchObject({ result: { accepted: false } });
+    expect(acceptedResult).toMatchObject({ result: { accepted: true } });
+    expect(duplicateResult).toMatchObject({ result: { accepted: false } });
+
+    const terminalRecord = await protocol.waitFor(
+      ({ message }) => message.id === runRequest.id && 'result' in message,
+      'cancelled run terminal result',
+    );
+    const terminal = decodeResultLine('verification.run', terminalRecord.line);
+    if ('error' in terminal) throw new Error(terminal.error.message);
+    const completedRecord = protocol.records.find(
+      ({ message }) =>
+        message.id === runRequest.id && 'event' in message && message.event === 'run.completed',
+    );
+    expect(completedRecord).toBeDefined();
+    if (
+      completedRecord === undefined ||
+      !('event' in completedRecord.message) ||
+      completedRecord.message.event !== 'run.completed'
+    ) {
+      throw new Error('The cancelled run did not emit run.completed.');
+    }
+    expect(terminal.result).toStrictEqual(completedRecord.message.data.run);
+    expect(terminal.result).toMatchObject({
+      status: 'cancelled',
+      gate: { status: 'BLOCK' },
+      checks: [{ id: 'slow', status: 'cancelled' }],
+    });
+    expect(
+      protocol.records.some(
+        ({ message }) =>
+          message.id === runRequest.id &&
+          'event' in message &&
+          message.event === 'check.started' &&
+          message.data.check.id === 'later',
+      ),
+    ).toBe(false);
+
+    const postTerminalCancel = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'cancel-after-terminal',
+      method: 'verification.cancel',
+      params: { targetRequestId: runRequest.id },
+    } satisfies ProtocolRequest<'verification.cancel'>;
+    protocol.send(postTerminalCancel);
+    const postTerminalResult = decodeResultLine(
+      'verification.cancel',
+      (
+        await protocol.waitFor(
+          ({ message }) => message.id === postTerminalCancel.id && 'result' in message,
+          'post-terminal cancellation result',
+        )
+      ).line,
+    );
+    expect(postTerminalResult).toMatchObject({ result: { accepted: false } });
+
+    const execution = await protocol.finish();
+    expect(execution.code).toBe(0);
+    expect(execution.stderr).toBe('');
+    expect(
+      protocol.records.filter(({ message }) => message.id === runRequest.id && 'result' in message),
+    ).toHaveLength(1);
+    await expect(readFile(laterCheckMarker, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+
+    const history = await runCliProcess(['history', repository, '--json'], database);
+    expect(history.code).toBe(0);
+    expect(JSON.parse(history.stdout)).toContainEqual(terminal.result);
+  }, 25_000);
+
+  it('cancels a queued run before check start and rejects an active duplicate request id', async () => {
+    const { repository, database } = await fixture('basic-pass');
+    await writeFile(
+      join(repository, 'scripts', 'protocol-queue-blocker.mjs'),
+      [
+        "process.stdout.write('queue blocked\\n');",
+        'setInterval(() => undefined, 1_000);',
+        '',
+      ].join('\n'),
+    );
+    await writeFile(
+      join(repository, '.verify', 'project.yml'),
+      [
+        'version: 1',
+        'project:',
+        '  name: protocol-pre-start-cancellation-fixture',
+        'suites:',
+        '  blocker:',
+        '    type: test',
+        '    command: node scripts/protocol-queue-blocker.mjs',
+        '    failure_policy: block',
+        '',
+      ].join('\n'),
+    );
+
+    const protocol = startProtocolProcess(database);
+    const activeRun = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'active-run',
+      method: 'verification.run',
+      params: { repository },
+    } satisfies ProtocolRequest<'verification.run'>;
+    const queuedRun = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'queued-run',
+      method: 'verification.run',
+      params: { repository },
+    } satisfies ProtocolRequest<'verification.run'>;
+    protocol.send(activeRun);
+    await protocol.waitFor(
+      ({ message }) =>
+        message.id === activeRun.id &&
+        'event' in message &&
+        message.event === 'check.output' &&
+        message.data.checkId === 'blocker',
+      'queue-blocker output',
+    );
+
+    protocol.send(queuedRun);
+    protocol.send({
+      protocolVersion: PROTOCOL_VERSION,
+      id: activeRun.id,
+      method: 'runs.list',
+      params: { repository },
+    });
+    const duplicateError = await protocol.waitFor(
+      ({ message }) => message.id === activeRun.id && 'error' in message,
+      'active duplicate request rejection',
+    );
+    if (!('error' in duplicateError.message)) {
+      throw new Error('The active duplicate request was not rejected.');
+    }
+    expect(duplicateError.message.error.code).toBe('INVALID_REQUEST');
+    expect(duplicateError.message.error.message).toContain('already active');
+
+    const queuedCancel = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'cancel-queued-run',
+      method: 'verification.cancel',
+      params: { targetRequestId: queuedRun.id },
+    } satisfies ProtocolRequest<'verification.cancel'>;
+    protocol.send(queuedCancel);
+    const queuedCancelResult = decodeResultLine(
+      'verification.cancel',
+      (
+        await protocol.waitFor(
+          ({ message }) => message.id === queuedCancel.id && 'result' in message,
+          'queued cancellation result',
+        )
+      ).line,
+    );
+    expect(queuedCancelResult).toMatchObject({ result: { accepted: true } });
+
+    const activeCancel = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'cancel-active-run',
+      method: 'verification.cancel',
+      params: { targetRequestId: activeRun.id },
+    } satisfies ProtocolRequest<'verification.cancel'>;
+    protocol.send(activeCancel);
+    const activeCancelResult = decodeResultLine(
+      'verification.cancel',
+      (
+        await protocol.waitFor(
+          ({ message }) => message.id === activeCancel.id && 'result' in message,
+          'active cancellation result',
+        )
+      ).line,
+    );
+    expect(activeCancelResult).toMatchObject({ result: { accepted: true } });
+
+    const activeTerminal = decodeResultLine(
+      'verification.run',
+      (
+        await protocol.waitFor(
+          ({ message }) => message.id === activeRun.id && 'result' in message,
+          'active run terminal result',
+        )
+      ).line,
+    );
+    const queuedTerminal = decodeResultLine(
+      'verification.run',
+      (
+        await protocol.waitFor(
+          ({ message }) => message.id === queuedRun.id && 'result' in message,
+          'queued run terminal result',
+        )
+      ).line,
+    );
+    if ('error' in activeTerminal) throw new Error(activeTerminal.error.message);
+    if ('error' in queuedTerminal) throw new Error(queuedTerminal.error.message);
+    expect(queuedTerminal.result).toMatchObject({
+      status: 'cancelled',
+      checks: [],
+      gate: {
+        status: 'BLOCK',
+        reasons: ['No verification checks were run.'],
+        summary: { total: 0, cancelled: 0 },
+      },
+    });
+    expect(
+      protocol.records.some(
+        ({ message }) =>
+          message.id === queuedRun.id &&
+          'event' in message &&
+          (message.event === 'check.started' ||
+            message.event === 'check.output' ||
+            message.event === 'check.completed'),
+      ),
+    ).toBe(false);
+
+    const execution = await protocol.finish();
+    expect(execution.code).toBe(0);
+    expect(execution.stderr).toBe('');
+    const history = JSON.parse(
+      (await runCliProcess(['history', repository, '--json'], database)).stdout,
+    ) as VerificationRun[];
+    expect(history).toEqual(expect.arrayContaining([activeTerminal.result, queuedTerminal.result]));
+  }, 25_000);
 });
 
 describe('desktop protocol equivalence', () => {

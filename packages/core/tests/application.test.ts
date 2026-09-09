@@ -146,6 +146,83 @@ describe('VerifierApplication', () => {
     await expect(application.getRunHistory(root, 1)).resolves.toHaveLength(1);
   });
 
+  it('persists a pre-start interruption as cancelled with a blocking gate', async () => {
+    const ports = dependencies();
+    const controller = new AbortController();
+    controller.abort();
+    ports.verification.run = async (request) => ({
+      startedAt: '2026-01-01T00:00:00.000Z',
+      completedAt: '2026-01-01T00:00:00.000Z',
+      durationMs: 0,
+      interrupted: request.signal?.aborted === true,
+      results: [],
+    });
+    const application = new VerifierApplication({
+      ...ports,
+      createRunId: () => 'cancelled-run',
+      now: () => new Date('2026-01-01T00:00:00.000Z'),
+    });
+
+    const run = await application.runVerification({ repository: root, signal: controller.signal });
+
+    expect(run).toMatchObject({
+      id: 'cancelled-run',
+      status: 'cancelled',
+      checks: [],
+      gate: {
+        status: 'BLOCK',
+        reasons: ['No verification checks were run.'],
+        summary: { total: 0, cancelled: 0 },
+      },
+    });
+    expect(ports.saved).toEqual([run]);
+    await expect(application.getRunHistory(root)).resolves.toEqual([run]);
+  });
+
+  it('persists a late accepted interruption as cancelled and never PASS', async () => {
+    const ports = dependencies();
+    const controller = new AbortController();
+    ports.verification.run = async () => {
+      controller.abort();
+      return {
+        startedAt: '2026-01-01T00:00:00.000Z',
+        completedAt: '2026-01-01T00:00:01.000Z',
+        durationMs: 1_000,
+        interrupted: false,
+        results: [
+          {
+            id: 'test',
+            name: 'test',
+            type: 'test',
+            command: 'npm test',
+            failurePolicy: 'block',
+            status: 'passed',
+            startedAt: '2026-01-01T00:00:00.000Z',
+            completedAt: '2026-01-01T00:00:01.000Z',
+            durationMs: 1_000,
+            exitCode: 0,
+            findings: [],
+            artifacts: [],
+          },
+        ],
+      };
+    };
+    const application = new VerifierApplication({
+      ...ports,
+      createRunId: () => 'late-cancelled-run',
+      now: () => new Date('2026-01-01T00:00:02.000Z'),
+    });
+
+    const run = await application.runVerification({ repository: root, signal: controller.signal });
+
+    expect(run).toMatchObject({
+      id: 'late-cancelled-run',
+      status: 'cancelled',
+      gate: { status: 'BLOCK', reasons: ['Verification was interrupted.'] },
+    });
+    expect(ports.saved).toEqual([run]);
+  });
+
   it('reports an absent latest run explicitly', async () => {
     const application = new VerifierApplication(dependencies());
     await expect(application.getLatestRun(root)).rejects.toBeInstanceOf(NoVerificationRunError);

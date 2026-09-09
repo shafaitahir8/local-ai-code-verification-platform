@@ -4,6 +4,7 @@ import type { GateResult, GateStatus, VerificationCheckResult } from '@verify/do
 export interface QualityGateOptions {
   readonly evaluatedAt?: string;
   readonly emptyResultStatus?: Extract<GateStatus, 'WARN' | 'BLOCK'>;
+  readonly interrupted?: boolean;
 }
 
 export const QUALITY_GATE_EXIT_CODES = {
@@ -61,6 +62,11 @@ export function evaluateQualityGate(
     } else if (decision.status === 'WARN' && status === 'PASS') {
       status = 'WARN';
     }
+  }
+
+  if (options.interrupted === true && status !== 'BLOCK') {
+    status = 'BLOCK';
+    reasons.push('Verification was interrupted.');
   }
 
   return {

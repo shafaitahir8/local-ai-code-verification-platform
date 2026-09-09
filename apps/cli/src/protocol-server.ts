@@ -27,12 +27,105 @@ interface ProtocolWriter {
   diagnostic(value: string): void;
 }
 
+interface ProtocolRequestContext {
+  readonly signal?: AbortSignal;
+  readonly cancelTarget?: (targetRequestId: string) => boolean;
+}
+
+function yieldForCancellationFrames(): Promise<void> {
+  return new Promise((resolvePromise) => setImmediate(resolvePromise));
+}
+
+class ProtocolSession {
+  readonly #activeRequestIds = new Set<string>();
+  readonly #activeRuns = new Map<string, AbortController>();
+  readonly #operations = new Set<Promise<void>>();
+  #serial: Promise<void> = Promise.resolve();
+
+  public constructor(
+    private readonly application: VerifierApplication,
+    private readonly writer: ProtocolWriter,
+  ) {}
+
+  public accept(request: ProtocolRequest): void {
+    if (this.#activeRequestIds.has(request.id)) {
+      this.writer.write(
+        encodeProtocolError(
+          request.id,
+          'INVALID_REQUEST',
+          `Request id "${request.id}" is already active.`,
+        ),
+      );
+      return;
+    }
+
+    this.#activeRequestIds.add(request.id);
+
+    if (request.method === 'verification.cancel') {
+      const operation = handleProtocolRequest(this.application, request, this.writer, {
+        cancelTarget: (targetRequestId) => this.#cancel(targetRequestId),
+      }).finally(() => this.#activeRequestIds.delete(request.id));
+      this.#track(operation);
+      return;
+    }
+
+    const controller = request.method === 'verification.run' ? new AbortController() : undefined;
+    if (controller !== undefined) {
+      // Registration is synchronous so a following cancel frame can interrupt a queued run.
+      this.#activeRuns.set(request.id, controller);
+    }
+
+    const operation = this.#serial
+      .then(async () => {
+        if (controller !== undefined) {
+          // Let an immediately following control frame abort this registered run before core starts.
+          await yieldForCancellationFrames();
+        }
+        await handleProtocolRequest(
+          this.application,
+          request,
+          this.writer,
+          controller === undefined ? {} : { signal: controller.signal },
+        );
+      })
+      .finally(() => {
+        this.#activeRequestIds.delete(request.id);
+        if (controller !== undefined && this.#activeRuns.get(request.id) === controller) {
+          this.#activeRuns.delete(request.id);
+        }
+      });
+
+    this.#serial = operation.catch(() => undefined);
+    this.#track(operation);
+  }
+
+  public async drain(): Promise<void> {
+    await Promise.all([...this.#operations]);
+  }
+
+  #track(operation: Promise<void>): void {
+    this.#operations.add(operation);
+    void operation.then(
+      () => this.#operations.delete(operation),
+      () => this.#operations.delete(operation),
+    );
+  }
+
+  #cancel(targetRequestId: string): boolean {
+    const controller = this.#activeRuns.get(targetRequestId);
+    if (controller === undefined || controller.signal.aborted) return false;
+    controller.abort();
+    return true;
+  }
+}
+
 export async function serveProtocol(application: VerifierApplication, io: CliIo): Promise<void> {
   const input = createInterface({ input: process.stdin, crlfDelay: Number.POSITIVE_INFINITY });
   const writer: ProtocolWriter = {
     write: (value) => io.writeOut(value),
     diagnostic: (value) => io.writeError(value),
   };
+  const session = new ProtocolSession(application, writer);
 
   for await (const line of input) {
     if (line.trim().length === 0) continue;
@@ -43,14 +136,17 @@ export async function serveProtocol(application: VerifierApplication, io: CliIo)
       writer.write(encodeProtocolError(null, 'INVALID_REQUEST', formatError(error)));
       continue;
     }
-    await handleProtocolRequest(application, request, writer);
+    session.accept(request);
   }
+
+  await session.drain();
 }
 
 export async function handleProtocolRequest(
   application: VerifierApplication,
   request: ProtocolRequest,
   writer: ProtocolWriter,
+  context: ProtocolRequestContext = {},
 ): Promise<void> {
   try {
     switch (request.method) {
@@ -105,9 +201,22 @@ export async function handleProtocolRequest(
         );
         return;
       }
+      case 'verification.cancel': {
+        writer.write(
+          encodeResult('verification.cancel', {
+            protocolVersion: PROTOCOL_VERSION,
+            id: request.id,
+            result: {
+              accepted: context.cancelTarget?.(request.params.targetRequestId) ?? false,
+            },
+          }),
+        );
+        return;
+      }
       case 'verification.run': {
         const run = await application.runVerification({
           repository: request.params.repository,
+          signal: context.signal,
           onEvent: (event, runId) => {
             switch (event.type) {
               case 'check.started':

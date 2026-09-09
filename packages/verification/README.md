@@ -33,6 +33,7 @@ scheduling state, and retained-output limits. Final run and gate records belong 
 - Checks execute in configured order and emit ordered lifecycle events.
 - It never evaluates policy or persists history and never assumes a test framework.
 - An aborted run cannot be reported as complete success.
+- Cancellation observed as the final check settles is retained in the terminal run evidence.
 - Check-completed events contain the same bounded result added to final evidence.
 - Retained stdout/stderr is explicitly marked when truncated; live output remains streamed.
 

@@ -165,6 +165,8 @@ export function useDashboard(
     }
 
     const controller = new AbortController();
+    const generation = loadGeneration.current;
+    const selectedRepository = repository;
     runController.current?.abort();
     runController.current = controller;
     setRunPhase('running');
@@ -181,6 +183,9 @@ export function useDashboard(
         {
           signal: controller.signal,
           onEvent: (event) => {
+            if (generation !== loadGeneration.current || runController.current !== controller) {
+              return;
+            }
             switch (event.event) {
               case 'check.started':
                 setLiveChecks((current) => [
@@ -227,19 +232,31 @@ export function useDashboard(
         },
       );
 
+      if (generation !== loadGeneration.current || runController.current !== controller) {
+        return;
+      }
+
       setActiveRun(run);
       setRunPhase('completed');
       setLiveAnnouncement(
-        `Verification completed. Quality gate ${run.gate?.status ?? 'unavailable'}.`,
+        run.status === 'cancelled'
+          ? 'Verification interrupted and saved.'
+          : `Verification completed. Quality gate ${run.gate?.status ?? 'unavailable'}.`,
       );
 
       const [nextGate, nextHistory] = await Promise.all([
-        client.request('gate.latest', { repository }),
-        client.request('runs.list', { repository, limit: 10 }),
+        client.request('gate.latest', { repository: selectedRepository }),
+        client.request('runs.list', { repository: selectedRepository, limit: 10 }),
       ]);
+      if (generation !== loadGeneration.current || runController.current !== controller) {
+        return;
+      }
       setLatestGate(nextGate);
       setHistory(nextHistory.runs);
     } catch (runError) {
+      if (generation !== loadGeneration.current || runController.current !== controller) {
+        return;
+      }
       setRunPhase('error');
       setError(errorMessage(runError));
       setLiveAnnouncement(
@@ -253,7 +270,13 @@ export function useDashboard(
   }, [client, config?.exists, repository]);
 
   const stopVerification = useCallback(() => {
-    runController.current?.abort();
+    const controller = runController.current;
+    if (controller === undefined || controller.signal.aborted) {
+      return;
+    }
+    setRunPhase('cancelling');
+    setLiveAnnouncement('Stopping verification and saving interrupted evidence.');
+    controller.abort();
   }, []);
 
   const selectHistoryRun = useCallback((runId?: string) => {

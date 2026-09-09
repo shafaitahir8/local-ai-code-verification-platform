@@ -15,6 +15,22 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   {
+    files: ['**/*.js', '**/*.mjs', '**/*.cjs'],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: {
+      ...tseslint.configs.disableTypeChecked.languageOptions,
+      globals: {
+        Buffer: 'readonly',
+        WebSocket: 'readonly',
+        clearTimeout: 'readonly',
+        console: 'readonly',
+        fetch: 'readonly',
+        process: 'readonly',
+        setTimeout: 'readonly',
+      },
+    },
+  },
+  {
     files: ['**/*.ts', '**/*.tsx'],
     languageOptions: {
       parserOptions: {

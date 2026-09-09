@@ -53,10 +53,11 @@ Tauri shell. Build that boundary separately after building the engine:
     pnpm --filter @verify/cli build
     pnpm --filter @verify/desktop desktop:build
 
-Current Windows validation limitation (2026-09-08): `rustc` and `cargo` are not installed, and the
-Windows SDK library directory is absent. The native Tauri build therefore cannot be run on this
-machine. The browser frontend and all Node-based validation remain available; an unrun native build
-must not be reported as passing.
+Windows x64 native delivery was validated locally on 2026-09-09 with Rust/Cargo, MSVC, and the
+Windows SDK. The production build includes a self-contained sidecar and has passed an installed,
+outside-checkout workflow smoke test without Node.js on the application runtime `PATH`. Generated
+sidecars and installers remain ignored build artifacts; reproduce the native and installed-package
+checks before treating a new source revision as release-ready.
 
 ## CLI
 
@@ -147,6 +148,11 @@ The Tauri dashboard supports selecting a repository, reviewing detected project 
 Run the browser UI with **pnpm --filter @verify/desktop dev**. With Rust and the platform-specific Tauri prerequisites installed, run the native application with **pnpm --filter @verify/desktop tauri dev** and build it with **pnpm --filter @verify/desktop desktop:build**.
 
 The desktop is a client of the same headless use cases as the CLI. It requires no server port and contains no command-execution or gate-calculation logic.
+
+The packaged Windows application includes its self-contained verification engine and SQLite addon;
+end users do not need Node.js, npm, pnpm, or the development checkout. Git and any tools invoked by
+the selected repository's own configured checks must still be installed. See the
+**[user guide](docs/guides/USER_GUIDE.md)** for the complete desktop workflow and troubleshooting.
 
 ## Privacy and command trust
 

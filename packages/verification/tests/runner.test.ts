@@ -75,6 +75,36 @@ describe('VerificationRunner', () => {
     expect(evidence.interrupted).toBe(true);
   });
 
+  it('retains cancellation accepted as the final check completes', async () => {
+    const controller = new AbortController();
+    const adapter: VerificationAdapter = {
+      id: 'late-cancel',
+      execute: async (current) => {
+        controller.abort();
+        const now = new Date().toISOString();
+        return {
+          ...current,
+          status: 'passed',
+          startedAt: now,
+          completedAt: now,
+          durationMs: 0,
+          exitCode: 0,
+          findings: [],
+          artifacts: [],
+        };
+      },
+    };
+
+    const evidence = await new VerificationRunner(adapter).run({
+      checks: [check],
+      repositoryRoot: process.cwd(),
+      signal: controller.signal,
+    });
+
+    expect(evidence.results).toHaveLength(1);
+    expect(evidence.interrupted).toBe(true);
+  });
+
   it('bounds retained output for persistence and terminal protocol messages', async () => {
     const output = '\u0000'.repeat(MAX_RETAINED_OUTPUT_JSON_CHARACTERS);
     const adapter: VerificationAdapter = {

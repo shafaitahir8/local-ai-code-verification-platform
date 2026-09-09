@@ -12,6 +12,8 @@ const repositoryParamsSchema = z.strictObject({
   repository: z.string().min(1),
 });
 
+const requestIdSchema = z.string().min(1).max(256);
+
 const failurePolicySchema = z.enum(['block', 'warn']);
 
 const suiteConfigSchema = z.strictObject({
@@ -55,6 +57,7 @@ export const protocolParamsSchemas = {
   'config.init': repositoryParamsSchema.extend({ force: z.boolean().optional() }),
   'repository.inspect': repositoryParamsSchema,
   'verification.run': repositoryParamsSchema,
+  'verification.cancel': z.strictObject({ targetRequestId: requestIdSchema }),
   'gate.latest': repositoryParamsSchema,
   'runs.list': repositoryParamsSchema.extend({
     limit: z.number().int().min(1).max(100).optional(),
@@ -76,6 +79,7 @@ export const protocolResultSchemas = {
   }),
   'repository.inspect': repositoryChangeSchema,
   'verification.run': verificationRunSchema,
+  'verification.cancel': z.strictObject({ accepted: z.boolean() }),
   'gate.latest': z
     .strictObject({
       runId: z.string().min(1),

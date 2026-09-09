@@ -46,6 +46,7 @@ owned by its source package.
 - `config.init`
 - `repository.inspect`
 - `verification.run`
+- `verification.cancel`
 - `gate.latest`
 - `runs.list`
 
@@ -53,10 +54,21 @@ Events are `check.started`, `check.output`, `check.completed`, and `run.complete
 server message carries `protocolVersion: 1`. Incompatible or malformed input fails explicitly; it is
 never treated as console output or silently coerced.
 
+`verification.cancel` is an additive version 1 control request. It has its own request ID and names
+the active `verification.run` request in `params.targetRequestId`. Its terminal result is
+`{ "accepted": true }` only when that run accepted its first cancellation request; unknown,
+already-cancelled, and completed targets return `false`.
+
+The stdio session continues reading while ordinary requests execute. Ordinary requests are
+serialized, cancellation bypasses that queue, and a queued run is registered before execution so
+it can be cancelled before its first check. Request IDs must be unique while active. EOF stops
+accepting frames and drains accepted requests before process exit.
+
 ## Important invariants
 
 - Standard output contains one validated JSON envelope per line and no human logs.
 - Request IDs correlate every event and exactly one terminal result/error.
+- An active duplicate request ID is rejected explicitly and cannot replace the original operation.
 - Arbitrarily split/coalesced chunks decode in order; malformed, oversized, or incompatible input
   fails explicitly.
 - Retained verification output is bounded before terminal run envelopes are encoded.

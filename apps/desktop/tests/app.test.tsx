@@ -94,11 +94,11 @@ describe('desktop dashboard', () => {
     },
   );
 
-  it('shows a running state and interrupts the active request from Stop run', async () => {
+  it('shows cancellation progress and renders the persisted interrupted run', async () => {
     const user = userEvent.setup();
     render(
       <App
-        client={createMockEngineClient({ latencyMs: 60 })}
+        client={createMockEngineClient({ latencyMs: 250 })}
         pickRepository={async () => null}
         initialRepository="C:\\work\\running-project"
       />,
@@ -112,7 +112,34 @@ describe('desktop dashboard', () => {
     expect(screen.getByText('Running configured checks')).toBeInTheDocument();
     await user.click(stop);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('INTERRUPTED');
+    expect(screen.getByRole('button', { name: 'Stopping…' })).toBeDisabled();
+    expect(await screen.findByText('Verification interrupted and saved.')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByText('Quality gate: BLOCK')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Run verification' })).toBeEnabled();
+  });
+
+  it('does not let a cancelled run overwrite a newly opened repository', async () => {
+    const user = userEvent.setup();
+    render(
+      <App
+        client={createMockEngineClient({ latencyMs: 100 })}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\old-project"
+      />,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Run verification' }));
+    expect(await screen.findByRole('heading', { name: 'Collecting evidence' })).toBeInTheDocument();
+
+    const path = screen.getByRole('textbox', { name: 'Repository path' });
+    await user.clear(path);
+    await user.type(path, 'C:\\work\\new-project');
+    await user.click(screen.getByRole('button', { name: 'Inspect again' }));
+
+    expect(await screen.findByRole('heading', { name: 'new-project' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Ready for merge' })).toBeInTheDocument();
+    expect(screen.queryByText('Verification interrupted and saved.')).not.toBeInTheDocument();
   });
 
   it('renders a structured engine error without replacing it with a gate', async () => {

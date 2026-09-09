@@ -76,3 +76,59 @@ If platform prerequisites prevent a Tauri build, record the exact limitation and
 ## Package documentation
 
 Each package must document its purpose, public API, allowed and forbidden dependencies, owned data, invariants, security considerations, and test command. Use **docs/development/PACKAGE-DOCUMENTATION-TEMPLATE.md** when adding a package.
+
+## Development log rules
+
+`docs/DEVELOPMENT_LOG.md` is both a development history and a recovery journal for interrupted AI sessions.
+
+1. Treat the file as append-only.
+2. Never rewrite, condense, replace, or delete earlier entries unless explicitly instructed.
+3. Add a short checkpoint after every meaningful subtask, not only at the end of a full iteration.
+4. Also add a checkpoint before starting any long-running or high-risk operation that could be interrupted, such as:
+   - large builds
+   - packaging
+   - installer creation
+   - native compilation
+   - integration test suites
+   - smoke tests
+   - CI validation
+   - migrations
+5. A checkpoint should briefly record:
+   - what was completed
+   - what files/components were affected
+   - what was validated
+   - what remains
+   - the exact next safe step
+6. If work is partially complete, explicitly mark it as `IN PROGRESS`.
+7. If an AI session detects that usage/time/context is becoming limited, immediately write a handoff checkpoint before continuing.
+8. Keep entries concise. Do not log every trivial edit or formatting change.
+9. Git remains the source of truth for exact changes.
+10. Review `git diff` before considering a task complete.
+
+### Standard checkpoint format
+
+```md
+## YYYY-MM-DD — <checkpoint name>
+
+Status: IN PROGRESS | COMPLETE | BLOCKED
+
+Completed:
+
+- ...
+
+Affected:
+
+- ...
+
+Validated:
+
+- ...
+
+Remaining:
+
+- ...
+
+Next safe step:
+
+- ...
+```

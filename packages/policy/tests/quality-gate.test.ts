@@ -88,6 +88,15 @@ describe('evaluateQualityGate', () => {
       'BLOCK',
     );
   });
+
+  it('blocks an interruption accepted after otherwise passing evidence', () => {
+    expect(
+      evaluateQualityGate([result('passed')], { evaluatedAt, interrupted: true }),
+    ).toMatchObject({
+      status: 'BLOCK',
+      reasons: ['Verification was interrupted.'],
+    });
+  });
 });
 
 describe('gateStatusToExitCode', () => {

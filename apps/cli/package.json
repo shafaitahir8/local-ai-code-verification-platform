@@ -11,9 +11,11 @@
   },
   "scripts": {
     "build": "tsup --config tsup.config.ts",
+    "build:sea:bundle": "tsup --config tsup.sea.config.ts",
+    "build:sea:windows": "pnpm build:sea:bundle && node scripts/build-windows-sea.mjs",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "dev": "tsx src/index.ts",
-    "lint": "eslint src tests tsup.config.ts",
+    "lint": "eslint src tests scripts tsup.config.ts tsup.sea.config.ts",
     "test": "pnpm build && vitest run",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc -p tsconfig.json"
@@ -33,5 +35,8 @@
     "drizzle-orm": "0.45.2",
     "yaml": "2.8.1",
     "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "postject": "1.0.0-alpha.6"
   }
 }

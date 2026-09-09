@@ -192,6 +192,41 @@ function verificationRun(
   };
 }
 
+function cancelledVerificationRun(
+  repository: string,
+  checks: readonly CheckResult[],
+): VerificationRun {
+  const startedAt = iso(1_000);
+  const completedAt = new Date().toISOString();
+  const cancelled = checks.filter((check) => check.status === 'cancelled').length;
+  return {
+    id: 'mock-cancelled-005',
+    repositoryRoot: repository,
+    status: 'cancelled',
+    startedAt,
+    completedAt,
+    durationMs: Math.max(0, Date.parse(completedAt) - Date.parse(startedAt)),
+    checks,
+    gate: {
+      status: 'BLOCK',
+      reasons:
+        cancelled === 0
+          ? ['No verification checks were run.']
+          : [`${checks.at(-1)?.name ?? 'A configured check'} was cancelled.`],
+      evaluatedAt: completedAt,
+      summary: {
+        total: checks.length,
+        passed: checks.filter((check) => check.status === 'passed').length,
+        warning: checks.filter((check) => check.status === 'warning').length,
+        failed: checks.filter((check) => check.status === 'failed').length,
+        error: checks.filter((check) => check.status === 'error').length,
+        cancelled,
+        skipped: checks.filter((check) => check.status === 'skipped').length,
+      },
+    },
+  };
+}
+
 async function pause(milliseconds: number, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) {
     throw new EngineRequestError('INTERRUPTED', 'The mock engine request was interrupted.');
@@ -233,12 +268,19 @@ export class MockEngineClient implements EngineClient {
     params: ProtocolParamsMap[Method],
     options: EngineRequestOptions = {},
   ): Promise<ProtocolResultMap[Method]> {
-    await pause(this.#latencyMs, options.signal);
+    await pause(this.#latencyMs, method === 'verification.run' ? undefined : options.signal);
 
     if (this.#failMethod === method) {
       throw new EngineRequestError('MOCK_ERROR', `Mock failure while calling ${method}.`);
     }
 
+    if (method === 'verification.cancel') {
+      return { accepted: false } as ProtocolResultMap[Method];
+    }
+
+    if (!('repository' in params)) {
+      throw new EngineRequestError('MOCK_ERROR', `Unsupported mock method ${method}.`);
+    }
     const repository = params.repository;
 
     switch (method) {
@@ -368,8 +410,22 @@ export class MockEngineClient implements EngineClient {
 
       case 'verification.run': {
         const run = verificationRun(repository, this.#scenario);
+        const completedResults: CheckResult[] = [];
+        const finishCancelled = (checks: readonly CheckResult[]): ProtocolResultMap[Method] => {
+          const cancelledRun = cancelledVerificationRun(repository, checks);
+          options.onEvent?.({
+            protocolVersion: 1,
+            id: 'mock-event',
+            event: 'run.completed',
+            data: { run: cancelledRun },
+          });
+          return cancelledRun as ProtocolResultMap[Method];
+        };
 
         for (const result of run.checks) {
+          if (options.signal?.aborted === true) {
+            return finishCancelled(completedResults);
+          }
           const started: ProtocolEventMessage = {
             protocolVersion: 1,
             id: 'mock-event',
@@ -387,7 +443,32 @@ export class MockEngineClient implements EngineClient {
             },
           };
           options.onEvent?.(started);
-          await pause(this.#latencyMs, options.signal);
+          try {
+            await pause(this.#latencyMs, options.signal);
+          } catch (error) {
+            if (!(error instanceof EngineRequestError) || error.code !== 'INTERRUPTED') {
+              throw error;
+            }
+            const completedAt = new Date().toISOString();
+            const cancelledResult: CheckResult = {
+              ...result,
+              status: 'cancelled',
+              completedAt,
+              durationMs: Math.max(0, Date.parse(completedAt) - Date.parse(result.startedAt)),
+              exitCode: undefined,
+              stdout: '',
+              stderr: '',
+              errorSummary: 'Command execution was cancelled.',
+            };
+            completedResults.push(cancelledResult);
+            options.onEvent?.({
+              protocolVersion: 1,
+              id: 'mock-event',
+              event: 'check.completed',
+              data: { runId: run.id, result: cancelledResult },
+            });
+            return finishCancelled(completedResults);
+          }
 
           const output: ProtocolEventMessage = {
             protocolVersion: 1,
@@ -410,6 +491,7 @@ export class MockEngineClient implements EngineClient {
             data: { runId: run.id, result },
           };
           options.onEvent?.(completed);
+          completedResults.push(result);
         }
 
         options.onEvent?.({
@@ -422,6 +504,8 @@ export class MockEngineClient implements EngineClient {
         return run as ProtocolResultMap[Method];
       }
     }
+
+    throw new EngineRequestError('MOCK_ERROR', `Unsupported mock method ${method}.`);
   }
 }
 

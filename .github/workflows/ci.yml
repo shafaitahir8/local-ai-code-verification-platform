@@ -27,3 +27,67 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+
+  native-windows:
+    name: Native Windows x64
+    needs: validate
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      CARGO_TERM_COLOR: always
+      RUST_BACKTRACE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.22.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install Rust x64 validation components
+        shell: pwsh
+        run: |
+          rustup default stable-x86_64-pc-windows-msvc
+          rustup component add rustfmt clippy
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/desktop/src-tauri/target
+          key: native-windows-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: native-windows-
+      - run: pnpm install --frozen-lockfile
+      - name: Build self-contained engine
+        run: pnpm build:engine:windows
+      - name: Smoke engine without Node on child PATH
+        run: pnpm smoke:engine:windows
+      - name: Validate locked Rust bridge
+        shell: pwsh
+        run: |
+          cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all -- --check
+          cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --locked
+          cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --all-features --locked -- -D warnings
+          cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --all-features --locked
+      - name: Build unsigned NSIS package
+        run: pnpm --filter @verify/desktop exec tauri build --bundles nsis
+      - name: Smoke installed package outside checkout
+        shell: pwsh
+        run: >-
+          ./scripts/smoke-installed-windows.ps1
+          -InstallerPath "apps/desktop/src-tauri/target/release/bundle/nsis/Local Code Verifier_0.1.0_x64-setup.exe"
+          -OutputDirectory "$env:RUNNER_TEMP/Local Verifier installed smoke"
+      - name: Confirm Cargo lockfile stayed reproducible
+        run: git diff --exit-code -- apps/desktop/src-tauri/Cargo.lock
+      - name: Upload unsigned installer and smoke summary
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-code-verifier-windows-x64-unsigned
+          path: |
+            apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+            ${{ runner.temp }}/Local Verifier installed smoke/**
+          if-no-files-found: warn
+          retention-days: 14
+          compression-level: 0

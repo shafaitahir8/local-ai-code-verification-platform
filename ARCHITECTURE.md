@@ -111,10 +111,11 @@ Stored command output may contain proprietary data or secrets and must be treate
 
 ## Desktop protocol
 
-The desktop development bridge serializes requests, starts a local core process for each one, and
-exchanges newline-delimited JSON on stdin/stdout. Ordered event frames cross a request-scoped Tauri
-IPC channel rather than a global event bus. The standalone protocol server can process multiple
-requests over one stream. Every envelope is validated and contains:
+The desktop bridge serializes ordinary requests, starts the packaged verification-engine sidecar for
+each one, and exchanges newline-delimited JSON on stdin/stdout. Release builds resolve only the
+Tauri `externalBin`; debug builds may use an explicit local-engine override. Ordered event frames
+cross a request-scoped Tauri IPC channel rather than a global event bus. The standalone protocol
+server can process multiple requests over one stream. Every envelope is validated and contains:
 
 - protocolVersion, currently 1;
 - request id for correlation;
@@ -124,7 +125,12 @@ requests over one stream. Every envelope is validated and contains:
 
 Standard output in protocol mode is reserved for protocol frames. Diagnostic logs go to standard error. Unknown versions, methods, malformed input, and duplicate terminal responses are explicit errors. Transport code is separate from use cases.
 
-Initial methods cover project discovery, config read/init, repository inspection, verification run, latest gate, and run history. Verification emits check-started, output, check-completed, and run-completed events.
+Initial methods cover project discovery, config read/init, repository inspection, verification run,
+graceful verification cancellation, latest gate, and run history. Verification emits check-started,
+output, check-completed, and run-completed events. A cancellation control frame has its own request
+ID and targets the active run ID; accepted cancellation must end in the original run's persisted
+`cancelled` terminal result. The native bridge uses bounded shutdown and Windows Job Object
+containment if cooperative cancellation or normal engine exit fails.
 
 ## Extension model
 

@@ -83,6 +83,33 @@ describe('protocol request codec', () => {
     expect(decodeRequestLine(encoded)).toEqual(request);
   });
 
+  it('round-trips an additive cancellation request with its own correlation id', () => {
+    const request = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'cancel-1',
+      method: 'verification.cancel',
+      params: { targetRequestId: 'run-1' },
+    } satisfies ProtocolRequest<'verification.cancel'>;
+
+    const encoded = encodeRequest(request);
+
+    expect(decodeRequestLine(encoded)).toEqual(request);
+    expect(
+      decodeResultLine(
+        'verification.cancel',
+        encodeResult('verification.cancel', {
+          protocolVersion: PROTOCOL_VERSION,
+          id: request.id,
+          result: { accepted: true },
+        }),
+      ),
+    ).toEqual({
+      protocolVersion: PROTOCOL_VERSION,
+      id: request.id,
+      result: { accepted: true },
+    });
+  });
+
   it('rejects incompatible versions, unknown methods, extra fields, and malformed params', () => {
     expect(() =>
       decodeRequestLine(
@@ -114,6 +141,17 @@ describe('protocol request codec', () => {
           method: 'runs.list',
           params: { repository: '/workspace/example', limit: 0 },
           consoleOutput: 'must not enter the protocol',
+        }),
+      ),
+    ).toThrow(ProtocolDecodeError);
+
+    expect(() =>
+      decodeRequestLine(
+        JSON.stringify({
+          protocolVersion: 1,
+          id: 'cancel-1',
+          method: 'verification.cancel',
+          params: { targetRequestId: '', force: true },
         }),
       ),
     ).toThrow(ProtocolDecodeError);

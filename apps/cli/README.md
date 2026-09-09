@@ -24,8 +24,8 @@ execution/configuration error, and `3` for interruption. Help and version output
 ## Allowed dependencies
 
 Core and every concrete local adapter needed by the composition root, protocol/config/domain types,
-Commander, and Node process/stdio facilities. Third-party runtime packages declared here remain
-external to the bundled entry point.
+Commander, and Node process/stdio facilities. The source CLI keeps its ESM entry; Windows delivery
+uses a separate fully bundled CommonJS Node SEA entry.
 
 ## Forbidden dependencies
 
@@ -42,15 +42,22 @@ remain owned by their packages.
 
 - JSON mode emits exactly one machine-readable document on stdout without progress noise.
 - Protocol mode reserves stdout for validated NDJSON frames and sends diagnostics to stderr.
+- Protocol mode keeps reading while ordinary requests execute, serializes those requests, and lets
+  `verification.cancel` interrupt an active or queued verification run.
 - The CLI and protocol call the same `VerifierApplication` instance and do not recalculate gates.
 - `init` never replaces an existing file without `--force`.
 - Operational errors and interruptions never become successful gates.
+- SEA argument handling accounts for Node exposing the executable in both `process.argv[0]` and
+  `process.argv[1]`; the outside-checkout protocol smoke guards this runtime-specific contract.
 
 ## Security and privacy
 
 The composition executes explicitly configured local commands with the current user's permissions
 and stores sensitive local evidence. There is no sandbox, redaction, encryption, authentication,
 telemetry, or network endpoint. Review untrusted repository configuration before running it.
+
+The Windows SEA embeds the matching `better-sqlite3` addon. Startup verifies and atomically extracts
+that addon to a content-addressed per-user cache; it does not resolve packages from the checkout.
 
 ## Versioned contracts
 
@@ -61,8 +68,15 @@ version 0.1.0. Exit meanings and JSON fields must not change silently.
 
     pnpm --filter @verify/cli test
     pnpm --filter @verify/cli typecheck
+    pnpm build:engine:windows
+    pnpm smoke:engine:windows
 
 Integration tests use real temporary Git repositories and command processes for init/inspect/run,
 PASS/WARN/BLOCK, invalid configuration, missing executables, active-command interruption,
 persistence, and repair history. They also spawn the bundled CLI in both human and JSON modes and
-exercise its NDJSON protocol as a real child process.
+exercise its NDJSON protocol as a real child process, including cancellation during output and
+before a queued run starts.
+The Windows smoke copies the engine outside the checkout, removes Node.js from its child `PATH`, and
+exercises real-repository PASS/WARN/BLOCK, history persistence, and protocol-mode argument handling.
+Set `VERIFY_ENGINE_PATH` to an installed/extracted sidecar path to run the same smoke against that
+exact executable without copying the source-built engine.
