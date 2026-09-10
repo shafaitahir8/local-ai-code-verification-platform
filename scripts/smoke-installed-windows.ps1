@@ -91,6 +91,41 @@ $previousSmokeMode = $env:VERIFY_SMOKE_MODE
 $previousRestartRepository = $env:VERIFY_SMOKE_RESTART_REPOSITORY
 $guiProcess = $null
 $uiSmokeRoot = Join-Path $output ("Installed UI Workflow {0}" -f [char]0x00FC)
+$webViewPolicyEdgePath = 'HKLM:\SOFTWARE\Policies\Microsoft\Edge'
+$webViewPolicyWebView2Path = Join-Path $webViewPolicyEdgePath 'WebView2'
+$webViewPolicyPath = Join-Path $webViewPolicyWebView2Path 'AdditionalBrowserArguments'
+$webViewPolicyValueName = $application.Name
+$currentPrincipal = [System.Security.Principal.WindowsPrincipal]::new(
+  [System.Security.Principal.WindowsIdentity]::GetCurrent()
+)
+$isElevated = $currentPrincipal.IsInRole(
+  [System.Security.Principal.WindowsBuiltInRole]::Administrator
+)
+$webViewPolicyEdgeKeyExisted = $false
+$webViewPolicyWebView2KeyExisted = $false
+$webViewPolicyKeyExisted = $false
+$webViewPolicyValueExisted = $false
+$previousWebViewPolicyValue = $null
+$previousWebViewPolicyKind = $null
+$webViewPolicyTouched = $false
+
+if ($isElevated) {
+  $webViewPolicyEdgeKeyExisted = Test-Path -LiteralPath $webViewPolicyEdgePath
+  $webViewPolicyWebView2KeyExisted = Test-Path -LiteralPath $webViewPolicyWebView2Path
+  $webViewPolicyKeyExisted = Test-Path -LiteralPath $webViewPolicyPath
+  if ($webViewPolicyKeyExisted) {
+    $policyKey = Get-Item -LiteralPath $webViewPolicyPath
+    if ($policyKey.GetValueNames() -contains $webViewPolicyValueName) {
+      $webViewPolicyValueExisted = $true
+      $previousWebViewPolicyValue = $policyKey.GetValue(
+        $webViewPolicyValueName,
+        $null,
+        [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames
+      )
+      $previousWebViewPolicyKind = $policyKey.GetValueKind($webViewPolicyValueName).ToString()
+    }
+  }
+}
 
 function Get-SmokeDebugPort {
   $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
@@ -112,6 +147,67 @@ function Stop-SmokeApplication {
   if (-not $Process.WaitForExit(5000)) {
     Stop-Process -Id $Process.Id -Force
     $Process.WaitForExit()
+  }
+}
+
+function Set-SmokeWebViewArguments {
+  param([int]$Port)
+
+  $arguments = "--remote-debugging-port=$Port --remote-allow-origins=*"
+  $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = $arguments
+  if (-not $isElevated) {
+    return
+  }
+
+  $policyPaths = @(
+    $webViewPolicyEdgePath
+    $webViewPolicyWebView2Path
+    $webViewPolicyPath
+  )
+  foreach ($policyPath in $policyPaths) {
+    if (-not (Test-Path -LiteralPath $policyPath)) {
+      New-Item -Path $policyPath -Force | Out-Null
+    }
+  }
+  New-ItemProperty `
+    -LiteralPath $webViewPolicyPath `
+    -Name $webViewPolicyValueName `
+    -Value $arguments `
+    -PropertyType String `
+    -Force | Out-Null
+}
+
+function Restore-SmokeWebViewPolicy {
+  if (-not $webViewPolicyTouched) {
+    return
+  }
+
+  if ($webViewPolicyValueExisted) {
+    New-ItemProperty `
+      -LiteralPath $webViewPolicyPath `
+      -Name $webViewPolicyValueName `
+      -Value $previousWebViewPolicyValue `
+      -PropertyType $previousWebViewPolicyKind `
+      -Force | Out-Null
+  } else {
+    Remove-ItemProperty `
+      -LiteralPath $webViewPolicyPath `
+      -Name $webViewPolicyValueName `
+      -ErrorAction SilentlyContinue
+  }
+
+  $cleanupPaths = @(
+    @{ Path = $webViewPolicyPath; Existed = $webViewPolicyKeyExisted }
+    @{ Path = $webViewPolicyWebView2Path; Existed = $webViewPolicyWebView2KeyExisted }
+    @{ Path = $webViewPolicyEdgePath; Existed = $webViewPolicyEdgeKeyExisted }
+  )
+  foreach ($candidate in $cleanupPaths) {
+    if (-not $candidate.Existed -and (Test-Path -LiteralPath $candidate.Path)) {
+      $policyKey = Get-Item -LiteralPath $candidate.Path
+      if ($policyKey.ValueCount -eq 0 -and $policyKey.SubKeyCount -eq 0) {
+        Remove-Item -LiteralPath $candidate.Path
+      }
+    }
   }
 }
 
@@ -137,8 +233,10 @@ try {
   $env:VERIFY_SMOKE_MODE = 'primary'
   Remove-Item Env:VERIFY_SMOKE_RESTART_REPOSITORY -ErrorAction SilentlyContinue
   $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $output 'WebView2 User Data'
-  $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS =
-    "--remote-debugging-port=$debugPort --remote-allow-origins=*"
+  if ($isElevated) {
+    $webViewPolicyTouched = $true
+  }
+  Set-SmokeWebViewArguments -Port $debugPort
   if ($null -ne (Get-Command node.exe -ErrorAction SilentlyContinue)) {
     throw 'Node.js unexpectedly remains available on the packaged-app smoke PATH.'
   }
@@ -163,8 +261,7 @@ try {
   $env:VERIFY_SMOKE_RESTART_REPOSITORY =
     Join-Path $uiSmokeRoot ("PASS repository {0}" -f [char]0x00FC)
   $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $output 'WebView2 Restart User Data'
-  $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS =
-    "--remote-debugging-port=$debugPort --remote-allow-origins=*"
+  Set-SmokeWebViewArguments -Port $debugPort
 
   $guiProcess = Start-Process -FilePath $application.FullName -WorkingDirectory $installDirectory -PassThru
   & $node $uiSmoke
@@ -257,7 +354,11 @@ try {
   } else {
     $env:VERIFY_SMOKE_RESTART_REPOSITORY = $previousRestartRepository
   }
-  Stop-SmokeApplication -Process $guiProcess
+  try {
+    Stop-SmokeApplication -Process $guiProcess
+  } finally {
+    Restore-SmokeWebViewPolicy
+  }
 }
 
 $summary = [ordered]@{

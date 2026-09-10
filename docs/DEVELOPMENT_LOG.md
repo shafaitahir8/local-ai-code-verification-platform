@@ -1271,3 +1271,190 @@ Remaining:
 Next safe step:
 
 - Review the final three-file diff, commit it separately, push `main`, and monitor GitHub Actions.
+
+## 2026-09-10 — Hosted native Windows validation start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Pushed candidate `2fae7d4392183b518cc99f003cb342e58cff3fcb` and confirmed the Ubuntu, macOS,
+  and Windows validation jobs passed installation, formatting, lint, typecheck, tests, and build.
+- Confirmed the dependent hosted `Native Windows x64` job started on that exact candidate.
+
+Affected:
+
+- Hosted release evidence and recovery journal only.
+
+Validated:
+
+- All three hosted validation matrix legs: passed.
+
+Remaining:
+
+- SEA construction, no-Node engine smoke, locked Rust checks, strict Clippy, Rust tests, Tauri/NSIS
+  packaging, installed outside-checkout UI smoke, lockfile check, and artifact upload are running.
+- Do not create `v0.1.0` until the native job succeeds completely.
+
+Next safe step:
+
+- Monitor hosted run `34401755883` and inspect the exact native step if any failure occurs.
+
+## 2026-09-10 — Hosted native Windows CI attempt 1
+
+Status: IN PROGRESS
+
+Completed:
+
+- Reviewed hosted run `34401755883` through the native Windows package and installed-app smoke.
+- Confirmed SEA construction, no-Node engine smoke, locked Rust validation, strict Clippy, Rust
+  tests, and unsigned NSIS packaging passed on candidate
+  `2fae7d4392183b518cc99f003cb342e58cff3fcb`.
+
+Affected:
+
+- Installed WebView UI smoke harness and hosted release evidence; application behavior has not been
+  changed.
+
+Validated:
+
+- The installed sidecar passed outside-checkout PASS/WARN/BLOCK, history, protocol-argv, and
+  no-Node checks.
+- The installed UI smoke failed because its WebView2 DevTools page endpoint was unavailable; the
+  workflow uploaded the unsigned installer and diagnostics artifact.
+
+Remaining:
+
+- Determine whether the packaged app exited, remote debugging was not enabled, or endpoint
+  discovery was incompatible with the hosted runner; fix only the observed harness/runtime issue.
+- Rerun affected local validation and require a complete hosted installed UI smoke before tagging.
+
+Next safe step:
+
+- Inspect the installed-smoke launch/discovery code and uploaded diagnostics from artifact
+  `local-code-verifier-windows-x64-unsigned` before editing.
+
+## 2026-09-10 — Elevated WebView2 smoke recovery
+
+Status: IN PROGRESS
+
+Completed:
+
+- Root-caused the hosted UI-smoke discovery failure to WebView2 Runtime 150 ignoring user-writable
+  browser-argument overrides when the host process is elevated.
+- Confirmed the uploaded smoke profile was initialized, while no DevTools endpoint was opened.
+
+Affected:
+
+- Installed-package Windows smoke harness and recovery journal only.
+
+Validated:
+
+- Microsoft WebView2 guidance identifies an HKLM per-executable `AdditionalBrowserArguments` policy
+  as an elevation-safe test channel; the reported Runtime 150 symptom matches hosted run
+  `34401755883`.
+
+Remaining:
+
+- Add a scoped elevated-run policy with reliable restoration, validate the harness locally, commit
+  the CI portability fix, push, and require a completely green hosted run.
+
+Next safe step:
+
+- Update `scripts/smoke-installed-windows.ps1` so elevated smoke runs set and restore only the
+  installed executable's HKLM browser-argument policy.
+
+## 2026-09-10 — Elevated WebView2 smoke fix validation start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Added an app-specific HKLM WebView2 browser-argument policy for elevated installed-app smoke
+  runs while retaining the environment-variable path for non-elevated development runs.
+- Preserved any prior policy value and restore or remove the smoke-only value during cleanup.
+
+Affected:
+
+- `scripts/smoke-installed-windows.ps1` and recovery journal only; the packaged application binary
+  and production runtime configuration are unchanged.
+
+Validated:
+
+- PowerShell parsing and `git diff --check`: passed.
+- Static review confirms the policy value is scoped to `local-code-verifier.exe` and both smoke
+  launch ports are applied through the same helper.
+
+Remaining:
+
+- Run the installed application workflow locally, complete workspace regression validation, then
+  commit, push, and require hosted validation of the elevated branch.
+
+Next safe step:
+
+- Run the outside-checkout installed-package smoke against the hosted candidate artifact.
+
+## 2026-09-10 — Elevated WebView2 smoke fix local validation
+
+Status: COMPLETE
+
+Completed:
+
+- Exercised the updated harness against the hosted candidate's unsigned NSIS installer from a
+  temporary directory outside the checkout.
+- Confirmed non-elevated runs retain environment-based WebView2 attachment; hosted CI remains the
+  required proof for the elevated HKLM-policy path.
+
+Affected:
+
+- Installed-package validation evidence and recovery journal only.
+
+Validated:
+
+- Self-contained engine: PASS/WARN/BLOCK, history, protocol argv, and no-Node PATH passed.
+- Installed WebView UI through Tauri IPC and the native sidecar: PASS/WARN/BLOCK passed.
+- Persisted cancellation, recorded process-tree cleanup, and history after app restart passed.
+
+Remaining:
+
+- Run the full workspace gate, commit the isolated portability fix, push, and monitor all hosted
+  jobs on the exact new SHA.
+
+Next safe step:
+
+- Run `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm build`
+  sequentially.
+
+## 2026-09-10 — Elevated WebView2 smoke fix validation
+
+Status: COMPLETE
+
+Completed:
+
+- Completed the isolated elevated-WebView2 smoke-harness fix and exact cleanup of its app-specific
+  policy value and any newly created empty policy keys.
+- Re-ran the complete workspace gate sequentially through Corepack after the first invocation found
+  no `pnpm` shim and therefore ran no package command.
+
+Affected:
+
+- Installed-package Windows smoke harness and recovery journal only.
+
+Validated:
+
+- PowerShell parsing and `git diff --check`: passed.
+- `pnpm format:check`: passed.
+- `pnpm lint`: 22/22 tasks passed.
+- `pnpm typecheck`: 22/22 tasks passed.
+- `pnpm test`: 22/22 tasks passed.
+- `pnpm build`: 12/12 tasks passed.
+
+Remaining:
+
+- Review and commit the two-file change, push `main`, and require the hosted elevated smoke plus all
+  prerequisite jobs to pass on the exact new SHA.
+
+Next safe step:
+
+- Inspect the final diff and status, create one focused CI portability commit, then push and monitor
+  the resulting GitHub Actions run.
