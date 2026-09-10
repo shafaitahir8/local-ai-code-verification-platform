@@ -1695,3 +1695,122 @@ Next safe step:
 
 - Create a focused UI-readiness CI commit, push `main`, and monitor the resulting hosted run through
   the elevated installed-app smoke and artifact upload.
+
+## 2026-09-10 — Hosted installed UI readiness validation start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Committed the readiness fix as `fb1880d7679c886c04520c4493911a0c141a6761` and pushed `main`.
+- Confirmed hosted run `34422332127` was queued for that exact candidate.
+
+Affected:
+
+- Hosted CI evidence and recovery journal only.
+
+Validated:
+
+- The pre-push working tree was clean, and `origin/main` advanced to the candidate SHA.
+- Local outside-checkout installed workflow and full sequential workspace gate passed before the
+  commit.
+
+Remaining:
+
+- Require every matrix and native job, including the elevated installed UI workflow, lockfile check,
+  and artifact upload, to pass on this SHA before tagging.
+
+Next safe step:
+
+- Monitor hosted run `34422332127`; inspect exact diagnostics and make only a minimal portability fix
+  if another genuine failure appears.
+
+## 2026-09-10 — Hosted readiness matrix complete
+
+Status: IN PROGRESS
+
+Completed:
+
+- Confirmed Ubuntu, macOS, and Windows workspace validation passed on candidate
+  `fb1880d7679c886c04520c4493911a0c141a6761`.
+- Confirmed native Windows job `102700872523` started for the same run and SHA.
+
+Affected:
+
+- Hosted release evidence and recovery journal only.
+
+Validated:
+
+- Frozen install, format, lint, typecheck, tests, and build passed on all three matrix systems.
+
+Remaining:
+
+- Native SEA/no-Node, Rust, Clippy, test, NSIS, elevated installed-app, lockfile, and artifact steps
+  must all pass before tagging.
+
+Next safe step:
+
+- Monitor native job `102700872523` through the full installed UI workflow and artifact publication.
+
+## 2026-09-10 — Hosted installed UI workflow complete
+
+Status: IN PROGRESS
+
+Completed:
+
+- Confirmed the elevated outside-checkout installed-package smoke passed on candidate
+  `fb1880d7679c886c04520c4493911a0c141a6761`.
+- The hosted run advanced beyond the two prior WebView discovery/readiness failures.
+
+Affected:
+
+- Hosted release evidence and recovery journal only.
+
+Validated:
+
+- Installed engine and actual WebView-to-Tauri-to-Rust-to-sidecar workflow: passed.
+
+Remaining:
+
+- Cargo lockfile reproducibility, artifact upload, post-job cleanup, and the overall hosted run must
+  finish successfully before tagging.
+
+Next safe step:
+
+- Wait for run `34422332127` to complete, then inspect all job/step conclusions and the uploaded
+  artifact metadata on the exact candidate SHA.
+
+## 2026-09-10 — Hosted v0.1.0 release validation
+
+Status: COMPLETE
+
+Completed:
+
+- Hosted run `34422332127` passed completely on release candidate
+  `fb1880d7679c886c04520c4493911a0c141a6761`.
+- Confirmed the installed application used the bundled self-contained engine outside the checkout
+  with Node unavailable and completed the actual WebView-to-native workflow.
+
+Affected:
+
+- Hosted release evidence and recovery journal only.
+
+Validated:
+
+- Linux, macOS, and Windows workspace validation: passed.
+- SEA/no-Node smoke, locked Rust checks, strict Clippy, Rust tests, and NSIS packaging: passed.
+- Installed PASS/WARN/BLOCK, persisted cancellation, process cleanup, and restart history: passed.
+- Cargo lockfile reproducibility and artifact upload: passed; artifact `10131716235` has digest
+  `sha256:0d95bae991953e1a4d17a6e9fc507ff7de59a7f5be3966281ce9f2ae191d7663`.
+
+Remaining:
+
+- Commit and push this CI-evidence-only journal update, verify a clean tree, then create and push
+  annotated tag `v0.1.0` pointing explicitly to the tested candidate SHA.
+- Accepted limitations remain: unsigned Windows x64 artifacts, no updater, and no native macOS or
+  Linux release validation.
+
+Next safe step:
+
+- Preserve the tested SHA by committing the journal separately, then tag
+  `fb1880d7679c886c04520c4493911a0c141a6761` as `v0.1.0` after final Git checks.
