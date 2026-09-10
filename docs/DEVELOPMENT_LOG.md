@@ -1458,3 +1458,240 @@ Next safe step:
 
 - Inspect the final diff and status, create one focused CI portability commit, then push and monitor
   the resulting GitHub Actions run.
+
+## 2026-09-10 — Hosted elevated WebView2 validation start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Committed the scoped smoke-harness fix as
+  `4c5837dbd30046b3efbb6d4129d9f960d29c9958` and pushed `main` to `origin`.
+- Confirmed hosted run `34420838264` was queued for that exact candidate.
+
+Affected:
+
+- Hosted CI evidence and recovery journal only.
+
+Validated:
+
+- Pre-push status was clean and `origin/main` advanced to the candidate SHA.
+- Local outside-checkout installed smoke and the full sequential workspace gate passed before the
+  commit.
+
+Remaining:
+
+- Require all Linux, macOS, Windows, native packaging, elevated installed-app smoke, lockfile, and
+  artifact steps to pass on this exact SHA before tagging.
+
+Next safe step:
+
+- Monitor hosted run `34420838264`; if it fails, inspect the exact failing step and make only the
+  smallest genuine CI portability correction.
+
+## 2026-09-10 — Hosted matrix validation complete
+
+Status: IN PROGRESS
+
+Completed:
+
+- Confirmed Ubuntu, macOS, and Windows workspace validation all passed on candidate
+  `4c5837dbd30046b3efbb6d4129d9f960d29c9958`.
+- Confirmed the dependent `Native Windows x64` job started as job `102696341681`.
+
+Affected:
+
+- Hosted release evidence and recovery journal only.
+
+Validated:
+
+- Hosted frozen install, format, lint, lint, typecheck, tests, and build passed on all three matrix
+  operating systems.
+
+Remaining:
+
+- Native SEA construction, no-Node smoke, locked Rust checks, NSIS package, elevated installed-app
+  smoke, lockfile audit, and artifact upload must all pass.
+
+Next safe step:
+
+- Monitor native job `102696341681` through the installed UI smoke and retain exact step evidence.
+
+## 2026-09-10 — Hosted installed-app smoke start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Confirmed hosted SEA construction, no-Node engine smoke, locked Rust validation, strict Clippy,
+  Rust tests, and unsigned NSIS packaging passed on candidate
+  `4c5837dbd30046b3efbb6d4129d9f960d29c9958`.
+
+Affected:
+
+- Hosted installed-app release evidence and recovery journal only.
+
+Validated:
+
+- Native Windows prerequisites and package creation: passed.
+
+Remaining:
+
+- The elevated outside-checkout installed UI smoke is running; lockfile reproducibility and artifact
+  upload must also pass.
+
+Next safe step:
+
+- Monitor native job `102696341681` through the installed workflow, then inspect its complete step
+  and artifact record before any release tag.
+
+## 2026-09-10 — Hosted elevated WebView2 CI attempt 2
+
+Status: IN PROGRESS
+
+Completed:
+
+- Confirmed the elevated HKLM policy restored WebView2 DevTools attachment in hosted run
+  `34420838264`; the smoke advanced beyond page discovery and native-runtime detection.
+- Confirmed all workspace, SEA/no-Node, Rust, Clippy, test, and NSIS steps remained green.
+
+Affected:
+
+- Installed UI smoke compatibility and hosted release evidence; production application behavior is
+  unchanged.
+
+Validated:
+
+- The installed engine smoke passed before the UI harness attached.
+- The UI harness then failed while setting the repository input, so lockfile verification was
+  skipped and the release gate remains unsatisfied; diagnostics artifact `10131186334` uploaded.
+
+Remaining:
+
+- Inspect the exact WebView target/DOM and determine why the controlled input rejected or had not
+  rendered for the hosted runtime; preserve the real UI/IPC/native assertions.
+
+Next safe step:
+
+- Download and inspect run `34420838264` logs and artifact DOM/profile evidence before changing the
+  harness.
+
+## 2026-09-10 — Installed UI readiness recovery
+
+Status: IN PROGRESS
+
+Completed:
+
+- Inspected the hosted failure DOM and screenshot: the document and Tauri runtime existed, but
+  React had not yet committed the repository form and `#root` was still empty.
+- Confirmed `setRepository` queried the controlled input only once immediately after attachment.
+
+Affected:
+
+- Installed UI smoke synchronization and recovery journal only.
+
+Validated:
+
+- Artifact `10131186334` proves the failure was a UI-readiness race after successful CDP attachment,
+  not a sidecar, Tauri IPC, or packaged-asset assertion failure.
+
+Remaining:
+
+- Wait explicitly for the repository input to render before interacting, then re-run the installed
+  workflow and complete regression gate without weakening any outcome assertion.
+
+Next safe step:
+
+- Add a bounded repository-form readiness wait inside `setRepository`, preserving its existing
+  controlled-input and enabled-submit checks.
+
+## 2026-09-10 — Installed UI readiness validation start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Added a bounded wait for the actual repository input before the smoke harness attempts React
+  controlled-input interaction.
+
+Affected:
+
+- `scripts/smoke-installed-ui.mjs` and recovery journal only.
+
+Validated:
+
+- Prettier and `git diff --check`: passed.
+- Existing input-value, enabled-submit, native-runtime, gate, persistence, cancellation, and process
+  cleanup assertions remain unchanged.
+
+Remaining:
+
+- Run the full installed workflow locally and then re-run the sequential repository gate before a
+  second focused CI fix commit.
+
+Next safe step:
+
+- Run the outside-checkout installed-package smoke against the hosted candidate installer with the
+  readiness wait active.
+
+## 2026-09-10 — Installed UI readiness local validation
+
+Status: COMPLETE
+
+Completed:
+
+- Re-ran the complete installed workflow outside the checkout with the explicit React form-readiness
+  wait.
+
+Affected:
+
+- Installed-package validation evidence and recovery journal only.
+
+Validated:
+
+- JavaScript syntax check: passed.
+- Engine PASS/WARN/BLOCK, history, protocol argv, and no-Node PATH: passed.
+- Installed WebView UI through Tauri IPC and the native sidecar: PASS/WARN/BLOCK passed.
+- Persisted cancellation, recorded process cleanup, and history after app restart: passed.
+
+Remaining:
+
+- Run the full sequential workspace gate, commit this second isolated CI portability fix, push, and
+  require a completely green hosted run.
+
+Next safe step:
+
+- Run format, lint, typecheck, tests, and builds sequentially before committing.
+
+## 2026-09-10 — Installed UI readiness fix validation
+
+Status: COMPLETE
+
+Completed:
+
+- Completed the bounded React form-readiness synchronization without changing any functional smoke
+  assertion.
+- Re-ran the complete workspace gate sequentially.
+
+Affected:
+
+- Installed UI smoke harness and recovery journal only.
+
+Validated:
+
+- `pnpm format:check`: passed.
+- `pnpm lint`: 22/22 tasks passed.
+- `pnpm typecheck`: 22/22 tasks passed.
+- `pnpm test`: 22/22 tasks passed.
+- `pnpm build`: 12/12 tasks passed.
+- Local installed outside-checkout workflow: passed end to end.
+
+Remaining:
+
+- Review the diff, commit and push this second isolated CI portability fix, then require every hosted
+  job to pass on the exact new SHA.
+
+Next safe step:
+
+- Create a focused UI-readiness CI commit, push `main`, and monitor the resulting hosted run through
+  the elevated installed-app smoke and artifact upload.

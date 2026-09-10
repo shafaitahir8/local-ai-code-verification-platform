@@ -248,6 +248,11 @@ async function waitFor(client, expression, description, timeoutMs = 30_000) {
 
 async function setRepository(client, repository) {
   const value = JSON.stringify(repository);
+  await waitFor(
+    client,
+    'document.querySelector(\'input[aria-describedby="repository-path-help"]\') instanceof HTMLInputElement',
+    'the installed repository form to render',
+  );
   const updated = await evaluate(
     client,
     `(() => {
