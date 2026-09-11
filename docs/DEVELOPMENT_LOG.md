@@ -1814,3 +1814,149 @@ Next safe step:
 
 - Preserve the tested SHA by committing the journal separately, then tag
   `fb1880d7679c886c04520c4493911a0c141a6761` as `v0.1.0` after final Git checks.
+
+## 2026-09-11 — Post-v0.1.0 roadmap reset validation start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Imported the supplied revised product direction without changing its text or intent.
+- Added the reconciled post-v0.1.0 implementation plan and TASK-014 for the project-intelligence
+  foundation.
+- Recorded the accepted product hierarchy, sensor/executor separation, configuration-v2 approval,
+  general cancellation, Ollama privacy, and launch-containment decisions in ADR-009 through ADR-014.
+- Linked the future direction from the current architecture without representing planned packages as
+  implemented.
+
+Affected:
+
+- Architecture, planning/task documentation, decision records, and recovery journal only.
+
+Validated:
+
+- Imported source and repository copy compare equal after line-ending normalization.
+- `git diff --check`: passed before this checkpoint.
+- No Iteration 5 implementation code or runtime contract changed.
+
+Remaining:
+
+- Run the full sequential repository gate and review the complete documentation diff.
+
+Next safe step:
+
+- Run format check, lint, typecheck, tests, and build sequentially; fix only documentation-related
+  regressions, then append the completed checkpoint.
+
+## 2026-09-11 — Post-v0.1.0 roadmap reset
+
+Status: COMPLETE
+
+Completed:
+
+- Finalized the canonical revised product direction, reconciled Iterations 5 onward, and scoped the
+  first project-intelligence vertical slice.
+- Accepted ADR-009 through ADR-014 while leaving all Iteration 5 runtime implementation untouched.
+- Excluded the verbatim imported direction document from mechanical formatting so it remains equal
+  to the supplied source.
+
+Affected:
+
+- Architecture, planning/task documentation, decision records, formatting scope, and recovery
+  journal only.
+
+Validated:
+
+- Imported source equality after line-ending normalization: passed.
+- `corepack pnpm format:check`: passed.
+- `corepack pnpm lint`: 22/22 tasks passed.
+- `corepack pnpm typecheck`: 22/22 tasks passed.
+- `corepack pnpm test`: 22/22 tasks passed.
+- `corepack pnpm build`: 12/12 tasks passed.
+
+Remaining:
+
+- Iteration 5 implementation has not started; TASK-014 is the next authorized delivery slice.
+- Rust/Tauri/package smoke was not rerun because this milestone changes documentation only.
+
+Next safe step:
+
+- Review TASK-014 and begin its project-profile contract and Node/Vite/Vitest vertical slice as a
+  separate Iteration 5 implementation task.
+
+## 2026-09-11 — Roadmap completeness audit validation start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Deep-reviewed the revised direction, implementation roadmap, TASK-014, ADR-009 through ADR-014,
+  current architecture, Git scope, and v0.1.0 compatibility contracts.
+- Defined the project-profile, sensor, evidence/confidence, bounded-scan, cancellation, ecosystem,
+  fixture, and interface contracts needed to make TASK-014 implementation-ready.
+- Clarified deterministic facts versus AI inference versus approved policy, version-1 legacy versus
+  version-2 smart actions, approval failure behavior, AI fallback, static sites, and monorepos.
+- Retained the approved Iteration 5 through 9 sequence and kept the imported product-direction text
+  unchanged.
+
+Affected:
+
+- Architecture, implementation/task documentation, ADR-009 through ADR-014, and recovery journal
+  only.
+
+Validated:
+
+- Git scope contains only documentation and `.prettierignore` changes.
+- `v0.1.0` remains on `fb1880d`; release history is unchanged.
+- Imported product direction still matches the supplied source after line-ending normalization.
+- No Iteration 5 source, runtime, protocol, or configuration-schema implementation exists in the
+  working diff.
+
+Remaining:
+
+- Format the revisions, run the full sequential workspace gate, and review the complete final diff.
+
+Next safe step:
+
+- Run format check, lint, typecheck, tests, build, and `git diff --check`, then append the completed
+  audit checkpoint without starting Iteration 5 implementation.
+
+## 2026-09-11 — Roadmap completeness audit
+
+Status: COMPLETE
+
+Completed:
+
+- Removed duplicate roadmap wording and resolved the profile, sensor, authority, migration,
+  approval, cancellation, AI-fallback, large-repository, static-site, monorepo, and interface
+  ambiguities found during the final review.
+- Kept Iterations 5 through 9 in their approved order and retained Node/Vite/Vitest as the first
+  end-to-end project-intelligence slice.
+- Confirmed TASK-014 now fixes the contracts and delivery boundaries needed to begin implementation
+  without a new product decision.
+
+Affected:
+
+- Architecture, post-v0.1.0 implementation plan, TASK-014, ADR-009 through ADR-014, and recovery
+  journal only; the imported product-direction baseline remains unchanged.
+
+Validated:
+
+- `corepack pnpm format:check`: passed.
+- `corepack pnpm lint`: 22/22 tasks passed.
+- `corepack pnpm typecheck`: 22/22 tasks passed.
+- `corepack pnpm test`: 22/22 tasks passed.
+- `corepack pnpm build`: 12/12 tasks passed.
+- `git diff --check`: passed before this final checkpoint.
+- Git scope and v0.1.0 tag/history checks: passed.
+
+Remaining:
+
+- No Iteration 5 implementation has started.
+- Exact schema-v2 field syntax and later smart-action presentation belong to their own iteration
+  tasks; no TASK-014 product decision remains open.
+
+Next safe step:
+
+- Begin TASK-014 with the versioned profile and sensor contracts plus the Node/Vite/Vitest fixture,
+  then complete the same vertical slice through core, protocol, CLI, native bridge, and desktop.

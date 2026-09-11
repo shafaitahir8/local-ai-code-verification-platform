@@ -6,6 +6,59 @@ The v0.1.0 target is a local, deterministic code-verification application. It op
 
 AI, intelligent risk analysis, dependency graphs, native test-framework adapters, MCP, CI-provider integrations, and enterprise services are deliberately outside this milestone.
 
+## Post-v0.1.0 direction
+
+The accepted post-v0.1.0 roadmap preserves this deterministic foundation while changing the product
+hierarchy and user experience. The intended flow is:
+
+    Open repository
+           |
+           v
+    Deterministic project sensors ----> structured project profile
+           |                                      |
+           |                                      +----> local AI explanation/advice
+           |                                                    |
+           v                                                    v
+    explainable plan <--------------------------- user review/override
+           |
+           v
+    approved deterministic operations ----> evidence ----> PASS/WARN/BLOCK
+
+Local AI is advisory. It may explain ambiguity and propose actions or policy, but it cannot execute
+commands, persist configuration directly, or determine the Quality Gate. Project sensors are
+read-only and distinct from execution adapters. The desktop will present simple actions above the
+existing technical evidence panels, while all behavior continues to flow through the headless core.
+
+Future interfaces keep deterministic facts, AI inference, and approved executable policy visibly
+and structurally separate. Selecting a repository starts only bounded deterministic profiling. AI is
+not introduced until that profile and the deterministic planner are independently usable, and an
+unavailable local model never blocks those deterministic paths or triggers a remote fallback.
+
+The delivery order remains deliberate:
+
+1. Iteration 5 establishes read-only project intelligence and `Understand Project`.
+2. Iteration 6 turns deterministic facts into reviewable quick/full plans; it contains no AI.
+3. Iteration 7 adds advisory Ollama project understanding over the stable profile and plan.
+4. Iteration 8 adds the complete simple-action area and contained task execution.
+5. Iteration 9 adds AI-assisted configuration proposals and evidence explanation.
+
+This order prevents provider behavior from defining project facts, prevents planning from becoming
+an AI-only feature, and avoids rebuilding task UX around unstable discovery contracts.
+
+The canonical product reset and delivery sequence are documented in
+**docs/planning/REVISED-PRODUCT-PATH-POST-V0.1.0.md** and
+**docs/tasks/IMPLEMENTATION-PLAN-POST-V0.1.0.md**. ADR-009 through ADR-014 govern the new authority,
+sensor, configuration, cancellation, provider, and launch boundaries. These are roadmap decisions;
+the package table and primary flows below continue to describe the implemented v0.1.0 system until
+each later iteration is delivered.
+
+Iteration 5 adds portable profile types to **@verify/domain**, a `ProjectProfilerPort` to
+**@verify/core**, and one documented project-intelligence implementation containing the bounded
+inventory, sensor contract, coordinator, and initial metadata sensors. Sensors are isolated modules;
+a separate adapter package is introduced only when an ecosystem requires its own dependency or
+release boundary. Configuration keeps its version-1 discovery API as a compatibility path until a
+later migration removes that ownership explicitly.
+
 ## Architectural style
 
 The codebase uses ports-and-adapters architecture. Business rules point inward; infrastructure implements contracts at the edge.

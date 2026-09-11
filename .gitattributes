@@ -8,3 +8,6 @@
 *.pdb binary
 *.msi binary
 *.msix binary
+
+# Preserve the supplied product-direction Markdown, including intentional hard breaks.
+docs/planning/REVISED-PRODUCT-PATH-POST-V0.1.0.md whitespace=-blank-at-eol
