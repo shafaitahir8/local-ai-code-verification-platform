@@ -23,7 +23,18 @@ export function Dashboard({ controller }: { readonly controller: DashboardContro
           viewingHistory={Boolean(controller.selectedHistoryId)}
         />
       </div>
-      <ProjectOverview discovery={discovery} inspection={inspection} />
+      <div className="dashboard-grid__wide">
+        <ProjectOverview
+          discovery={discovery}
+          inspection={inspection}
+          profile={controller.profile}
+          profilePhase={controller.profilePhase}
+          profileProgress={controller.profileProgress}
+          profileError={controller.profileError}
+          onRefresh={() => void controller.understandProject()}
+          onStop={controller.stopProjectProfile}
+        />
+      </div>
       <ChangePanel inspection={inspection} />
       <div className="dashboard-grid__wide">
         <ChecksPanel

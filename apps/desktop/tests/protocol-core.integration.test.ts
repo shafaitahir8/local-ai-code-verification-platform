@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { cp, mkdtemp, rm } from 'node:fs/promises';
+import { access, cp, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,11 +39,13 @@ async function git(repository: string, ...args: string[]): Promise<void> {
   });
 }
 
-async function createFixture(): Promise<{ repository: string; database: string }> {
+async function createFixture(
+  fixture = 'basic-pass',
+): Promise<{ repository: string; database: string }> {
   const directory = await mkdtemp(join(tmpdir(), 'verify-desktop-core-'));
   temporaryDirectories.push(directory);
   const repository = join(directory, 'repository');
-  await cp(join(fixturesRoot, 'basic-pass'), repository, { recursive: true });
+  await cp(join(fixturesRoot, fixture), repository, { recursive: true });
   await git(repository, 'init', '--initial-branch=main', '--quiet');
   await git(repository, 'add', '.');
   await git(
@@ -108,6 +110,7 @@ function protocolTransport(database: string): EngineTransport {
 }
 
 type VerificationRun = ProtocolResultMap['verification.run'];
+type ProjectProfileResult = ProtocolResultMap['project.profile'];
 
 function deterministicOutcome(run: VerificationRun) {
   return {
@@ -136,6 +139,18 @@ function deterministicOutcome(run: VerificationRun) {
   };
 }
 
+function deterministicProfile(result: ProjectProfileResult) {
+  if (result.status === 'cancelled') return result;
+  return {
+    ...result,
+    profile: {
+      ...result.profile,
+      generatedAt: '<generated>',
+      scan: { ...result.profile.scan, elapsedMs: 0 },
+    },
+  };
+}
+
 afterEach(async () => {
   await Promise.all(
     temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
@@ -157,5 +172,22 @@ describe('desktop/core equivalence', () => {
     expect(cliResult.stdout.trim().split(/\r?\n/u)).toHaveLength(1);
     const cliRun = JSON.parse(cliResult.stdout) as VerificationRun;
     expect(deterministicOutcome(guiRun)).toStrictEqual(deterministicOutcome(cliRun));
+  }, 20_000);
+
+  it('returns the same read-only project profile through GUI protocol and CLI JSON paths', async () => {
+    const { repository, database } = await createFixture('project-intelligence/node-vite-vitest');
+    const client = new ProtocolEngineClient(protocolTransport(database), {
+      createRequestId: () => 'desktop-profile-equivalence',
+    });
+
+    const guiResult = await client.request('project.profile', { repository });
+    const cliResult = await spawnCli(['understand', repository, '--json'], database);
+
+    expect(cliResult.code).toBe(0);
+    expect(cliResult.stderr).toBe('');
+    expect(cliResult.stdout.trim().split(/\r?\n/u)).toHaveLength(1);
+    const cliProfile = JSON.parse(cliResult.stdout) as ProjectProfileResult;
+    expect(deterministicProfile(guiResult)).toStrictEqual(deterministicProfile(cliProfile));
+    await expect(access(database)).rejects.toMatchObject({ code: 'ENOENT' });
   }, 20_000);
 });

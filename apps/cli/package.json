@@ -26,6 +26,7 @@
     "@verify/core": "workspace:*",
     "@verify/domain": "workspace:*",
     "@verify/policy": "workspace:*",
+    "@verify/project-intelligence": "workspace:*",
     "@verify/protocol": "workspace:*",
     "@verify/repository": "workspace:*",
     "@verify/storage": "workspace:*",

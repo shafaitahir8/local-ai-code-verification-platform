@@ -1,10 +1,11 @@
 import type { ProjectConfigPreview, ProjectConfigV1, ProjectDiscovery } from '@verify/config';
-import type { RepositoryChange, VerificationRun } from '@verify/domain';
-import { describe, expect, it } from 'vitest';
+import type { ProjectProfileResult, RepositoryChange, VerificationRun } from '@verify/domain';
+import { describe, expect, it, vi } from 'vitest';
 
 import { NoVerificationRunError, VerifierApplication } from '../src/index.js';
 import type {
   ConfigurationPort,
+  ProjectProfilerPort,
   RepositoryPort,
   RunRepositoryPort,
   VerificationExecutorPort,
@@ -74,6 +75,9 @@ function dependencies() {
     resolveRoot: async () => root,
     inspect: async () => change,
   };
+  const profiler: ProjectProfilerPort = {
+    profile: async (): Promise<ProjectProfileResult> => ({ status: 'cancelled' }),
+  };
   const verification: VerificationExecutorPort = {
     run: async () => ({
       startedAt: '2026-01-01T00:00:00.000Z',
@@ -107,7 +111,7 @@ function dependencies() {
     getLatestRun: async () => saved[0] ?? null,
     listRuns: async (_repositoryRoot, limit = 20) => saved.slice(0, limit),
   };
-  return { configuration, repository, verification, runs, saved };
+  return { configuration, repository, profiler, verification, runs, saved };
 }
 
 describe('VerifierApplication', () => {
@@ -119,6 +123,39 @@ describe('VerifierApplication', () => {
 
     expect(result.config).toEqual(config);
     expect(result.overwritten).toBe(false);
+  });
+
+  it('profiles through its dedicated read-only port without touching other application ports', async () => {
+    const ports = dependencies();
+    const progress = vi.fn();
+    const controller = new AbortController();
+    const expected: ProjectProfileResult = { status: 'cancelled' };
+    ports.configuration.discover = async () => {
+      throw new Error('Configuration must not be read while profiling.');
+    };
+    ports.verification.run = async () => {
+      throw new Error('Verification must not run while profiling.');
+    };
+    ports.runs.saveRun = async () => {
+      throw new Error('Profiling must not persist a verification run.');
+    };
+    ports.profiler.profile = async (request) => {
+      expect(request).toEqual({
+        repositoryRoot: root,
+        signal: controller.signal,
+        onProgress: progress,
+      });
+      return expected;
+    };
+    const application = new VerifierApplication(ports);
+
+    await expect(
+      application.profileProject({
+        repository: '/repo/subdirectory',
+        signal: controller.signal,
+        onProgress: progress,
+      }),
+    ).resolves.toBe(expected);
   });
 
   it('evaluates and persists exactly the run it returns', async () => {

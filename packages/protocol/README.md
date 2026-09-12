@@ -42,22 +42,33 @@ owned by its source package.
 ## Version 1 methods
 
 - `project.discover`
+- `project.profile`
 - `config.get`
 - `config.init`
 - `repository.inspect`
 - `verification.run`
 - `verification.cancel`
+- `operation.cancel`
 - `gate.latest`
 - `runs.list`
 
-Events are `check.started`, `check.output`, `check.completed`, and `run.completed`. Every request and
-server message carries `protocolVersion: 1`. Incompatible or malformed input fails explicitly; it is
-never treated as console output or silently coerced.
+Events are `profile.progress`, `check.started`, `check.output`, `check.completed`, and
+`run.completed`. Every request and server message carries `protocolVersion: 1`. Incompatible or
+malformed input fails explicitly; it is never treated as console output or silently coerced.
+
+`project.profile` performs bounded, deterministic, read-only repository profiling. It streams
+`profile.progress` and returns either `{ "status": "completed", "profile": ... }` or
+`{ "status": "cancelled" }`. A budget-limited scan is a completed partial profile, not a cancelled
+result.
 
 `verification.cancel` is an additive version 1 control request. It has its own request ID and names
 the active `verification.run` request in `params.targetRequestId`. Its terminal result is
 `{ "accepted": true }` only when that run accepted its first cancellation request; unknown,
 already-cancelled, and completed targets return `false`.
+
+`operation.cancel` uses the same target-request correlation and acknowledgement rules for any
+registered cancellable operation. `verification.cancel` remains supported with its existing
+verification-specific meaning. The first accepted cancellation wins across both methods.
 
 The stdio session continues reading while ordinary requests execute. Ordinary requests are
 serialized, cancellation bypasses that queue, and a queued run is registered before execution so

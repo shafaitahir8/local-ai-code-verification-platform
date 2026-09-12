@@ -1960,3 +1960,453 @@ Next safe step:
 
 - Begin TASK-014 with the versioned profile and sensor contracts plus the Node/Vite/Vitest fixture,
   then complete the same vertical slice through core, protocol, CLI, native bridge, and desktop.
+
+## 2026-09-12 — Post-v0.1.0 roadmap milestone committed
+
+Status: COMPLETE
+
+Completed:
+
+- Committed the approved roadmap reset, ADR-009 through ADR-014, TASK-014, architecture updates,
+  recovery history, and file-specific formatting rules as `0463123`.
+- Kept the annotated `v0.1.0` tag on the previously validated `fb1880d` release commit.
+
+Affected:
+
+- Documentation, architecture records, development history, and formatting scope only.
+
+Validated:
+
+- Reviewed the complete staged patch and confirmed no Iteration 5 source or runtime changes.
+- `corepack pnpm format:check` and `git diff --cached --check`: passed.
+- Working tree was clean immediately after the commit.
+
+Remaining:
+
+- Implement and validate only TASK-014's first Node/Vite/Vitest vertical slice.
+
+Next safe step:
+
+- Define the versioned domain profile and read-only sensor contracts, then add fixture-driven tests.
+
+## 2026-09-12 — Iteration 5 first-slice contract start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Re-read TASK-014 and confirmed the authorized slice ends at deterministic Node/Vite/Vitest
+  profiling exposed through core, protocol, CLI, native bridge, and desktop.
+- Confirmed profiling must execute no project command and write no repository, configuration, or
+  database state.
+
+Affected:
+
+- Planned changes in domain, core, project intelligence, fixtures, and focused tests.
+
+Validated:
+
+- Baseline documentation milestone is committed and the pre-implementation tree was clean.
+
+Remaining:
+
+- Define and validate profile/evidence/confidence/sensor/budget/cancellation contracts.
+- Integrate the stable profile across protocol, CLI, native bridge, and desktop.
+
+Next safe step:
+
+- Inspect package documentation and existing contract/test conventions, then implement the domain
+  model and the smallest read-only project-intelligence package.
+
+## 2026-09-12 — Project-profile contract layer
+
+Status: COMPLETE
+
+Completed:
+
+- Added versioned profile, evidence, confidence, ambiguity, warning, progress, scan-limit, and
+  completed/cancelled domain records.
+- Added the documented read-only project-intelligence package with bounded sorted inventory,
+  contained metadata reads, sensor validation/isolation, and Node/Vite/Vitest detection.
+- Added a committed Node/Vite/Vitest fixture and a core `ProjectProfilerPort` use case that does not
+  touch configuration, execution, or storage.
+
+Affected:
+
+- `@verify/domain`, `@verify/project-intelligence`, `@verify/core`, fixtures, package documentation,
+  and the workspace lockfile.
+
+Validated:
+
+- Domain tests: 6 passed; project-intelligence tests: 8 passed; core tests: 7 passed.
+- Focused lint and typecheck passed; domain, project-intelligence, and core builds passed.
+- Tests distinguish budget-limited partial completion from cancellation and verify no fixture write
+  or command execution.
+
+Remaining:
+
+- Add protocol/CLI cancellation and no-database-write composition, then native and desktop exposure.
+
+Next safe step:
+
+- Extend protocol version 1 additively with `project.profile`, profile progress, and
+  `operation.cancel`, then wire the same core result into the CLI engine.
+
+## 2026-09-12 — Profile interface integration start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Stabilized and validated the first-slice profile and sensor contracts before exposing them to
+  interface or native layers.
+- Identified eager SQLite construction as a profiling write risk and method-specific cancellation
+  assumptions in the existing protocol/native bridge.
+
+Affected:
+
+- Planned protocol, CLI composition/server, Rust transport, and desktop projection changes.
+
+Validated:
+
+- Existing version-1 discovery remains isolated and unchanged; new profiling has no npm fallback.
+
+Remaining:
+
+- Implement and test profile equivalence, generalized cancellation, lazy storage, native routing,
+  automatic desktop loading, evidence rendering, refresh, and Stop.
+
+Next safe step:
+
+- Implement additive protocol and CLI integration while preserving every existing method and
+  verification-cancellation frame.
+
+## 2026-09-12 — Interrupted Iteration 5 interface recovery
+
+Status: IN PROGRESS
+
+Completed:
+
+- Reconciled the authoritative working tree with the last journal entry without discarding any
+  interrupted work.
+- Classified the domain, project-intelligence, fixture, and core profiling changes as complete;
+  protocol, CLI, native, and desktop exposure are partial and not yet fully validated.
+- Confirmed no implementation contradiction or out-of-scope schema-v2, AI, planning, command
+  approval, Python, or broader ecosystem work is present.
+
+Affected:
+
+- Complete but uncommitted: profile contracts, bounded Node/Vite/Vitest sensor, fixture, and core
+  port/use case.
+- Partial and unvalidated: additive protocol frames, lazy CLI storage and profile command/server,
+  method-aware Rust cancellation, and desktop automatic scan/evidence/refresh/Stop UI.
+
+Validated:
+
+- Domain tests: 6 passed; project-intelligence tests: 9 passed; core tests: 7 passed.
+- Focused lint, typecheck, and builds passed for the completed contract/core packages.
+- `v0.1.0` remains on `fb1880d`; the documentation milestone is `0463123` and release history is
+  untouched.
+
+Remaining:
+
+- Review and validate protocol/CLI behavior, including profile-only no-database-write proof and
+  generalized cancellation compatibility.
+- Review and validate native and desktop integration, add missing equivalence/cancellation/UI
+  tests, then run all repository and applicable Rust gates.
+
+Next safe step:
+
+- Run the focused protocol and CLI gates, fix only first-slice inconsistencies, and checkpoint the
+  validated interface boundary before proceeding to native integration.
+
+## 2026-09-12 — Native profile cancellation integration
+
+Status: COMPLETE
+
+Completed:
+
+- Registered `project.profile` as a cancellable native request and routed its correlated Stop frame
+  through additive `operation.cancel`.
+- Preserved `verification.run` routing through `verification.cancel`, request serialization,
+  bounded shutdown, and Windows Job Object process-tree cleanup.
+- Made terminal validation method-aware: profile cancellation requires a non-persisted cancelled
+  profile result, while verification cancellation still requires a persisted cancelled run.
+
+Affected:
+
+- Tauri Rust transport and its focused cancellation tests only.
+
+Validated:
+
+- `cargo fmt --check`, locked `cargo check`, strict Clippy, and locked Rust tests passed.
+- Rust tests: 12 passed; `git diff --check` passed for the native change.
+
+Remaining:
+
+- Prove the CLI engine acknowledges `operation.cancel` and returns the required cancelled profile
+  terminal frame, then validate the desktop request/Stop projection.
+
+Next safe step:
+
+- Complete focused protocol/CLI validation before treating the cross-process cancellation path as
+  integrated end to end.
+
+## 2026-09-12 — Protocol and CLI profile integration
+
+Status: COMPLETE
+
+Completed:
+
+- Added protocol-v1 `project.profile`, typed progress and terminal results, and generalized
+  `operation.cancel` without changing existing methods or `verification.cancel` semantics.
+- Added `verify understand`, lazy run-storage construction, and correlated profile/run cancellation
+  in protocol mode.
+- Added built-process equivalence and boundary tests for complete, partial, cancelled, unknown,
+  repeated, queued, and post-terminal behavior.
+
+Affected:
+
+- `@verify/protocol` and the CLI composition, command, formatter, protocol server, documentation,
+  integration tests, and workspace lockfile.
+
+Validated:
+
+- Protocol lint, typecheck, 11 tests, and build: passed.
+- CLI lint, typecheck, 21 tests, and build: passed.
+- Profile-only CLI/protocol tests created no SQLite/WAL/SHM file or `.verify/project.yml`, executed
+  no observed command, and left Git state unchanged.
+- CLI and protocol profiles matched after normalizing only generated time and elapsed duration.
+
+Remaining:
+
+- Complete desktop state/UX validation and then exercise the bundled engine/native boundary.
+
+Next safe step:
+
+- Finish desktop automatic load, evidence, refresh, progress, and confirmed-cancellation behavior,
+  then run focused cross-interface tests.
+
+## 2026-09-12 — Desktop project-profile integration
+
+Status: COMPLETE
+
+Completed:
+
+- Added non-blocking automatic profiling after repository load plus `Understand Project`, progress,
+  Stop, deterministic evidence, observed candidates, ambiguities, and warnings.
+- Kept complete, budget-limited partial, confirmed cancelled, and failed/unconfirmed-cancellation
+  states distinct; stale requests cannot replace another repository's profile.
+- Updated the browser mock, protocol client coverage, core/CLI equivalence test, and user/architecture
+  documentation for the first slice.
+
+Affected:
+
+- Desktop React state/components/styles/mock/tests and desktop/root architecture and user guides.
+
+Validated:
+
+- Desktop lint and typecheck: passed.
+- Desktop tests: 29 passed across 4 files.
+- Desktop Vite build and focused diff check: passed.
+- A profile-only desktop/core integration test produced the same normalized CLI/protocol profile and
+  created no SQLite database.
+
+Remaining:
+
+- Rebuild and smoke the self-contained Windows engine with profiling/cancellation outside the
+  checkout and Node absent, then run the full sequential regression gate.
+
+Next safe step:
+
+- Build the Windows SEA sidecar and run its extended profile/no-write/cancellation portability
+  smoke before final workspace validation.
+
+## 2026-09-12 — Windows sidecar profile smoke start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Extended the existing Windows SEA smoke harness to exercise `verify understand` and correlated
+  profile cancellation from an outside-checkout directory with Node removed from the child PATH.
+- Added assertions that profiling runs no observed script, changes no repository file, and creates
+  no SQLite database before verification begins.
+
+Affected:
+
+- Windows self-contained engine smoke harness only.
+
+Validated:
+
+- Smoke-script formatting, syntax, and CLI lint: passed.
+
+Remaining:
+
+- Rebuild the self-contained engine and execute the extended smoke harness.
+
+Next safe step:
+
+- Run `corepack pnpm build:engine:windows`, then `corepack pnpm smoke:engine:windows` sequentially.
+
+## 2026-09-12 — First-slice sensor hardening
+
+Status: COMPLETE
+
+Completed:
+
+- Prevented malformed non-string dependency declarations from creating false Vite, Vitest,
+  TypeScript, or ESLint capabilities.
+- Added coverage for the real inventory/sensor/finalizing progress sequence and malformed
+  dependency values while retaining fixture no-write checks.
+
+Affected:
+
+- `@verify/project-intelligence` Node sensor and focused profile tests only.
+
+Validated:
+
+- Formatting, lint, typecheck, and build passed for `@verify/project-intelligence`.
+- Project-intelligence tests: 10 passed.
+
+Remaining:
+
+- Complete and validate the protocol/CLI and desktop projections of the stable profile.
+
+Next safe step:
+
+- Finish cross-interface cancellation and no-database-write tests, then integrate the desktop
+  projection with the validated native bridge.
+
+## 2026-09-12 — Windows sidecar profile smoke
+
+Status: COMPLETE
+
+Completed:
+
+- Rebuilt the self-contained Windows x64 engine with the new project-intelligence package bundled.
+- Exercised complete profiling and correlated profile cancellation from an installed-style
+  temporary location outside the checkout with Node absent from the child `PATH`.
+
+Affected:
+
+- Generated ignored SEA sidecar plus its tracked smoke harness; no installer or runtime artifact is
+  tracked.
+
+Validated:
+
+- `corepack pnpm build:engine:windows`: passed.
+- `corepack pnpm smoke:engine:windows`: passed.
+- The packaged engine detected Node/pnpm/Vite/Vitest, created no profile database, ran no observed
+  command, changed no repository file, and returned exactly one cancelled profile terminal result.
+- Existing no-Node PASS/WARN/BLOCK, persisted history, and protocol-argv smoke checks remained green.
+
+Remaining:
+
+- Run the full sequential repository regression gate and final diff/scope review.
+
+Next safe step:
+
+- Append the full-regression start checkpoint, then run format check, lint, typecheck, all tests,
+  all builds, and `git diff --check` without overlapping Turbo graphs.
+
+## 2026-09-12 — First-slice full regression start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Integrated the Node/Vite/Vitest profile from domain and core through protocol, CLI, native
+  cancellation routing, bundled engine, and desktop presentation.
+- Completed focused package, interface, Rust, and no-Node outside-checkout sidecar validation.
+
+Affected:
+
+- Domain, project intelligence, core, protocol, CLI, Rust bridge, desktop, fixture, smoke harness,
+  lockfile, architecture, package docs, and user docs for TASK-014 slice 5A only.
+
+Validated:
+
+- Focused domain/project-intelligence/core/protocol/CLI/desktop and Rust gates are green.
+- Self-contained engine profile/cancellation/no-write smoke is green with Node absent.
+
+Remaining:
+
+- Run the complete repository format, lint, typecheck, test, and build commands sequentially, then
+  inspect the full diff, untracked files, and whitespace.
+
+Next safe step:
+
+- Run `corepack pnpm format:check`, `lint`, `typecheck`, `test`, and `build` in that order.
+
+## 2026-09-12 — Full regression desktop cancellation race
+
+Status: IN PROGRESS
+
+Completed:
+
+- Full format, lint, and typecheck gates passed.
+- The full test graph exposed one timing-sensitive desktop assertion after Stop; all other reported
+  package and desktop tests passed.
+
+Affected:
+
+- Existing verification-cancellation UI test under full-suite scheduling; no production contract
+  failure or profile mismatch was observed.
+
+Validated:
+
+- The same desktop test had passed in the focused suite, confirming the failure is a transient-state
+  race rather than a missing persisted cancelled run.
+
+Remaining:
+
+- Make the mock cancellation acknowledgement controllable so the test proves the visible
+  `cancelling` state and durable cancelled terminal state without scheduler dependence.
+- Rerun focused desktop tests, the full test gate, then the build gate.
+
+Next safe step:
+
+- Add a test-only verification-cancellation latency control to the mock, retain the existing
+  transient and persisted-state assertions, and rerun the failing desktop test.
+
+## 2026-09-12 — Iteration 5 first vertical slice
+
+Status: COMPLETE
+
+Completed:
+
+- Finished the single-root Node/Vite/Vitest profile from the versioned domain and read-only sensor
+  contracts through core, protocol, CLI, native cancellation routing, and desktop presentation.
+- Fixed malformed dependency false positives, lazy-loaded SQLite for profile-only workflows, and
+  made cancellation and its desktop terminal state method-aware.
+- Made the full-suite verification-cancellation test deterministic with a test-only mock latency;
+  production behavior and assertions remain unchanged.
+
+Affected:
+
+- Domain, project intelligence, core, protocol, CLI, Tauri bridge, desktop, fixture, Windows SEA
+  smoke harness, package/user/architecture documentation, and the workspace lockfile.
+
+Validated:
+
+- Full workspace format, lint, typecheck, test, and build gates passed sequentially; desktop tests
+  passed 30/30 and all 13 workspace builds passed.
+- Locked Rust check, strict Clippy, locked Rust tests (12/12), and Rust formatting passed.
+- The rebuilt Windows SEA engine passed complete/cancelled profiling outside the checkout with Node
+  absent, no observed command execution, no repository/config/database writes, and existing
+  PASS/WARN/BLOCK/history checks intact.
+- Final scope, untracked/ignored-output, lockfile, and whitespace audits passed; `v0.1.0` remains
+  unchanged on `fb1880d`.
+
+Remaining:
+
+- TASK-014 slices 5B and 5C remain: Jest/static-site profiles, Python/pytest, mixed and workspace
+  ambiguity, and the remaining fixture/budget/isolation breadth required for Iteration 5.
+- The elapsed-time budget is enforced cooperatively at scan/read/finalization boundaries rather
+  than by a hard preemptive filesystem deadline.
+
+Next safe step:
+
+- Commit this coherent 5A checkpoint when authorized, then implement only the fixture-driven Jest
+  and plain-static-site 5B slice without adding execution, planning, schema v2, or AI.

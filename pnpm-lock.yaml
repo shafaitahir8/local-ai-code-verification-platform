@@ -62,6 +62,9 @@ importers:
       '@verify/policy':
         specifier: workspace:*
         version: link:../../packages/policy
+      '@verify/project-intelligence':
+        specifier: workspace:*
+        version: link:../../packages/project-intelligence
       '@verify/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -185,6 +188,12 @@ importers:
   packages/domain: {}
 
   packages/policy:
+    dependencies:
+      '@verify/domain':
+        specifier: workspace:*
+        version: link:../domain
+
+  packages/project-intelligence:
     dependencies:
       '@verify/domain':
         specifier: workspace:*

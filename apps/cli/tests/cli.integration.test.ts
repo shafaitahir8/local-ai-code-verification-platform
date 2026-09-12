@@ -4,11 +4,12 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 
-import type { VerificationRun } from '@verify/domain';
+import type { ProjectProfileResult, VerificationRun } from '@verify/domain';
 import {
   decodeResultLine,
   decodeServerMessageLine,
   encodeRequest,
+  projectProfileResultSchema,
   PROTOCOL_VERSION,
   type ProtocolRequest,
   type ProtocolServerMessage,
@@ -225,20 +226,24 @@ async function terminateTestProcess(child: ChildProcessWithoutNullStreams): Prom
   child.kill('SIGKILL');
 }
 
-async function git(repository: string, ...args: string[]): Promise<void> {
-  await new Promise<void>((resolvePromise, reject) => {
+async function git(repository: string, ...args: string[]): Promise<string> {
+  return new Promise<string>((resolvePromise, reject) => {
     const child = spawn('git', args, {
       cwd: repository,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });
+    let stdout = '';
     let stderr = '';
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
     child.stderr.on('data', (chunk: Buffer) => {
       stderr += chunk.toString();
     });
     child.once('error', reject);
     child.once('close', (code) => {
-      if (code === 0) resolvePromise();
+      if (code === 0) resolvePromise(stdout);
       else reject(new Error(`git ${args.join(' ')} failed: ${stderr}`));
     });
   });
@@ -263,6 +268,18 @@ async function fixture(name: string): Promise<{ repository: string; database: st
     'baseline',
   );
   return { repository, database: join(directory, 'history.sqlite3') };
+}
+
+function withoutVolatileProfileFields(result: ProjectProfileResult): unknown {
+  if (result.status === 'cancelled') return result;
+  return {
+    ...result,
+    profile: {
+      ...result.profile,
+      generatedAt: '<generated-at>',
+      scan: { ...result.profile.scan, elapsedMs: 0 },
+    },
+  };
 }
 
 async function runCli(args: string[], database: string): Promise<CliResult> {
@@ -552,6 +569,234 @@ describe('actual CLI workflow', () => {
 });
 
 describe('built child-process protocol', () => {
+  it('exposes one read-only Node/Vite/Vitest profile through CLI and protocol without storage', async () => {
+    const { repository, database } = await fixture('project-intelligence/node-vite-vitest');
+    const commandMarker = join(repository, 'profiling-command-executed.marker');
+    const manifestPath = join(repository, 'package.json');
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    manifest.scripts.test = 'node never-profile.mjs';
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    await writeFile(
+      join(repository, 'never-profile.mjs'),
+      [
+        "import { writeFileSync } from 'node:fs';",
+        "writeFileSync('profiling-command-executed.marker', 'unexpected');",
+        '',
+      ].join('\n'),
+    );
+    const statusBefore = await git(repository, 'status', '--short', '--untracked-files=all');
+
+    const cli = await runCliProcess(['understand', repository, '--json'], database);
+    expect(cli).toMatchObject({ code: 0, stderr: '' });
+    expect(cli.stdout.trim().split(/\r?\n/u)).toHaveLength(1);
+    const cliResult = projectProfileResultSchema.parse(JSON.parse(cli.stdout));
+    if (cliResult.status !== 'completed') throw new Error('The CLI profile was cancelled.');
+    expect(cliResult.profile.capabilities.map(({ id }) => id)).toEqual(
+      expect.arrayContaining([
+        'runtime.node',
+        'package-manager.pnpm',
+        'framework.vite',
+        'test-framework.vitest',
+      ]),
+    );
+    expect(cliResult.profile.taskCandidates).toContainEqual(
+      expect.objectContaining({ kind: 'test', command: 'node never-profile.mjs' }),
+    );
+
+    const protocol = startProtocolProcess(database);
+    const request = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'profile-equivalence',
+      method: 'project.profile',
+      params: { repository },
+    } satisfies ProtocolRequest<'project.profile'>;
+    protocol.send(request);
+    const terminal = decodeResultLine(
+      'project.profile',
+      (
+        await protocol.waitFor(
+          ({ message }) => message.id === request.id && 'result' in message,
+          'project profile terminal result',
+        )
+      ).line,
+    );
+    if ('error' in terminal) throw new Error(terminal.error.message);
+    const execution = await protocol.finish();
+
+    expect(execution).toMatchObject({ code: 0, stderr: '' });
+    expect(
+      protocol.records.some(
+        ({ message }) =>
+          message.id === request.id &&
+          'event' in message &&
+          message.event === 'profile.progress' &&
+          message.data.phase === 'sensors',
+      ),
+    ).toBe(true);
+    expect(withoutVolatileProfileFields(terminal.result)).toStrictEqual(
+      withoutVolatileProfileFields(cliResult),
+    );
+    expect(await git(repository, 'status', '--short', '--untracked-files=all')).toBe(statusBefore);
+    await expect(readFile(commandMarker, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(
+      readFile(join(repository, '.verify', 'project.yml'), 'utf8'),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(readFile(database, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(readFile(`${database}-wal`, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(readFile(`${database}-shm`, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  }, 20_000);
+
+  it('correlates general profile cancellation while preserving verification-specific cancellation', async () => {
+    const { repository, database } = await fixture('project-intelligence/node-vite-vitest');
+    const protocol = startProtocolProcess(database);
+    const profileRequest = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'cancel-profile',
+      method: 'project.profile',
+      params: { repository },
+    } satisfies ProtocolRequest<'project.profile'>;
+    const verificationSpecificCancel = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'wrong-method-cancel',
+      method: 'verification.cancel',
+      params: { targetRequestId: profileRequest.id },
+    } satisfies ProtocolRequest<'verification.cancel'>;
+    const acceptedCancel = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'general-cancel',
+      method: 'operation.cancel',
+      params: { targetRequestId: profileRequest.id },
+    } satisfies ProtocolRequest<'operation.cancel'>;
+    const duplicateCancel = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'general-cancel-again',
+      method: 'operation.cancel',
+      params: { targetRequestId: profileRequest.id },
+    } satisfies ProtocolRequest<'operation.cancel'>;
+
+    protocol.send(profileRequest);
+    protocol.send(verificationSpecificCancel);
+    protocol.send(acceptedCancel);
+    protocol.send(duplicateCancel);
+
+    const wrongMethodResult = decodeResultLine(
+      'verification.cancel',
+      (
+        await protocol.waitFor(
+          ({ message }) => message.id === verificationSpecificCancel.id && 'result' in message,
+          'verification-specific profile cancellation rejection',
+        )
+      ).line,
+    );
+    const acceptedResult = decodeResultLine(
+      'operation.cancel',
+      (
+        await protocol.waitFor(
+          ({ message }) => message.id === acceptedCancel.id && 'result' in message,
+          'general profile cancellation acknowledgement',
+        )
+      ).line,
+    );
+    const duplicateResult = decodeResultLine(
+      'operation.cancel',
+      (
+        await protocol.waitFor(
+          ({ message }) => message.id === duplicateCancel.id && 'result' in message,
+          'duplicate general cancellation rejection',
+        )
+      ).line,
+    );
+    const terminal = decodeResultLine(
+      'project.profile',
+      (
+        await protocol.waitFor(
+          ({ message }) => message.id === profileRequest.id && 'result' in message,
+          'cancelled profile terminal result',
+        )
+      ).line,
+    );
+
+    expect(wrongMethodResult).toMatchObject({ result: { accepted: false } });
+    expect(acceptedResult).toMatchObject({ result: { accepted: true } });
+    expect(duplicateResult).toMatchObject({ result: { accepted: false } });
+    expect(terminal).toMatchObject({ result: { status: 'cancelled' } });
+
+    const postTerminalCancel = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'general-cancel-after-terminal',
+      method: 'operation.cancel',
+      params: { targetRequestId: profileRequest.id },
+    } satisfies ProtocolRequest<'operation.cancel'>;
+    protocol.send(postTerminalCancel);
+    expect(
+      decodeResultLine(
+        'operation.cancel',
+        (
+          await protocol.waitFor(
+            ({ message }) => message.id === postTerminalCancel.id && 'result' in message,
+            'post-terminal profile cancellation rejection',
+          )
+        ).line,
+      ),
+    ).toMatchObject({ result: { accepted: false } });
+
+    const execution = await protocol.finish();
+    expect(execution).toMatchObject({ code: 0, stderr: '' });
+    await expect(readFile(database, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  }, 15_000);
+
+  it('lets operation.cancel interrupt a registered verification run', async () => {
+    const { repository, database } = await fixture('basic-pass');
+    const protocol = startProtocolProcess(database);
+    const runRequest = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'general-cancel-run',
+      method: 'verification.run',
+      params: { repository },
+    } satisfies ProtocolRequest<'verification.run'>;
+    const cancelRequest = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'general-cancel-run-control',
+      method: 'operation.cancel',
+      params: { targetRequestId: runRequest.id },
+    } satisfies ProtocolRequest<'operation.cancel'>;
+
+    protocol.send(runRequest);
+    protocol.send(cancelRequest);
+
+    expect(
+      decodeResultLine(
+        'operation.cancel',
+        (
+          await protocol.waitFor(
+            ({ message }) => message.id === cancelRequest.id && 'result' in message,
+            'general verification cancellation acknowledgement',
+          )
+        ).line,
+      ),
+    ).toMatchObject({ result: { accepted: true } });
+    const terminal = decodeResultLine(
+      'verification.run',
+      (
+        await protocol.waitFor(
+          ({ message }) => message.id === runRequest.id && 'result' in message,
+          'generally cancelled verification terminal result',
+        )
+      ).line,
+    );
+    if ('error' in terminal) throw new Error(terminal.error.message);
+    expect(terminal.result).toMatchObject({ status: 'cancelled', gate: { status: 'BLOCK' } });
+
+    const execution = await protocol.finish();
+    expect(execution).toMatchObject({ code: 0, stderr: '' });
+    const history = JSON.parse(
+      (await runCliProcess(['history', repository, '--json'], database)).stdout,
+    ) as VerificationRun[];
+    expect(history).toContainEqual(terminal.result);
+  }, 15_000);
+
   it('streams correlated events, returns one terminal run, and persists that exact run', async () => {
     const { repository, database } = await fixture('basic-pass');
     const request: ProtocolRequest<'verification.run'> = {

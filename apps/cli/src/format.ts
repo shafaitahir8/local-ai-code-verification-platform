@@ -1,9 +1,47 @@
 import type {
   GateResult,
+  ProjectProfile,
   RepositoryChange,
   VerificationCheckResult,
   VerificationRun,
 } from '@verify/domain';
+
+export function formatProjectProfile(profile: ProjectProfile): string {
+  const lines = [
+    `Project: ${profile.displayName}`,
+    `Repository: ${profile.repositoryRoot}`,
+    `Profile: ${profile.completeness.toUpperCase()}`,
+    `Scanned: ${profile.scan.entriesScanned} entries; ${profile.scan.bytesRead} metadata bytes`,
+  ];
+
+  if (profile.capabilities.length === 0) {
+    lines.push('Detected capabilities: none');
+  } else {
+    lines.push('Detected capabilities:');
+    for (const capability of profile.capabilities) {
+      lines.push(
+        `  ${capability.kind}: ${capability.name} (${capability.confidence}; evidence: ${capability.evidenceIds.join(', ')})`,
+      );
+    }
+  }
+
+  if (profile.taskCandidates.length > 0) {
+    lines.push('Observed task candidates (not executed or approved):');
+    for (const task of profile.taskCandidates) {
+      lines.push(
+        `  ${task.kind}: ${task.command} (${task.confidence}; evidence: ${task.evidenceIds.join(', ')})`,
+      );
+    }
+  }
+
+  for (const ambiguity of profile.ambiguities) {
+    lines.push(`Ambiguity [${ambiguity.code}]: ${ambiguity.message}`);
+  }
+  for (const warning of profile.warnings) {
+    lines.push(`Warning [${warning.code}]: ${warning.message}`);
+  }
+  return lines.join('\n');
+}
 
 export function formatInspection(change: RepositoryChange): string {
   const branch = change.branch ?? '(detached HEAD)';

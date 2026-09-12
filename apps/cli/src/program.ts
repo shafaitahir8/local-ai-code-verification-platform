@@ -1,10 +1,17 @@
 import { Command, CommanderError, Option } from 'commander';
 
 import type { VerifierApplication } from '@verify/core';
+import type { ProjectProfileProgress } from '@verify/domain';
 import type { VerificationLifecycleEvent } from '@verify/verification';
 
 import { exitCodeForRun, EXIT_CODES } from './exit-codes.js';
-import { formatCheckResult, formatGate, formatInspection, formatRun } from './format.js';
+import {
+  formatCheckResult,
+  formatGate,
+  formatInspection,
+  formatProjectProfile,
+  formatRun,
+} from './format.js';
 import { serveProtocol } from './protocol-server.js';
 
 export interface CliIo {
@@ -44,6 +51,12 @@ function progressWriter(io: CliIo): (event: VerificationLifecycleEvent) => void 
         io.writeOut(line(formatCheckResult(event.result)));
         break;
     }
+  };
+}
+
+function profileProgressWriter(io: CliIo): (progress: ProjectProfileProgress) => void {
+  return (progress) => {
+    io.writeOut(line(`${progress.message} (${progress.entriesScanned} entries)`));
   };
 }
 
@@ -104,6 +117,33 @@ export function createProgram(context: CliContext): Command {
           io.writeOut(line(`  ${suite.id}: ${suite.command} — ${suite.reason}`));
         }
         for (const warning of discovery.warnings) io.writeError(line(`Warning: ${warning}`));
+      }
+    });
+
+  program
+    .command('understand')
+    .description('Build a deterministic, read-only profile of the project')
+    .argument('[repository]', 'path inside the Git repository', '.')
+    .option('--json', 'emit the protocol-equivalent profile result as JSON')
+    .action(async (repository: string, options: JsonOption) => {
+      const controller = new AbortController();
+      const handleInterrupt = (): void => controller.abort();
+      process.once('SIGINT', handleInterrupt);
+      try {
+        const result = await application.profileProject({
+          repository,
+          signal: controller.signal,
+          ...(options.json === true ? {} : { onProgress: profileProgressWriter(io) }),
+        });
+        if (options.json === true) writeJson(io, result);
+        else if (result.status === 'completed') {
+          io.writeOut(line(formatProjectProfile(result.profile)));
+        } else {
+          io.writeError(line('Project understanding cancelled.'));
+        }
+        if (result.status === 'cancelled') io.setExitCode(EXIT_CODES.interrupted);
+      } finally {
+        process.removeListener('SIGINT', handleInterrupt);
       }
     });
 

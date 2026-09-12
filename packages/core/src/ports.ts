@@ -5,7 +5,12 @@ import type {
   ProjectConfigV1,
   ProjectDiscovery,
 } from '@verify/config';
-import type { RepositoryChange, VerificationRun } from '@verify/domain';
+import type {
+  ProjectProfileProgress,
+  ProjectProfileResult,
+  RepositoryChange,
+  VerificationRun,
+} from '@verify/domain';
 import type { VerificationRunEvidence, VerificationRunRequest } from '@verify/verification';
 
 export interface ConfigurationPort {
@@ -20,6 +25,14 @@ export interface ConfigurationPort {
 export interface RepositoryPort {
   resolveRoot(startPath: string): Promise<string>;
   inspect(startPath: string): Promise<RepositoryChange>;
+}
+
+export interface ProjectProfilerPort {
+  profile(request: {
+    readonly repositoryRoot: string;
+    readonly signal?: AbortSignal;
+    readonly onProgress?: (progress: ProjectProfileProgress) => void;
+  }): Promise<ProjectProfileResult>;
 }
 
 export interface VerificationExecutorPort {

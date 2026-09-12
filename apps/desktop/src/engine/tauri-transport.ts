@@ -35,7 +35,7 @@ export class TauriEngineTransport implements EngineTransport {
         if (interrupted) {
           throw new EngineRequestError(
             'INTERRUPTED',
-            'The engine interruption did not return confirmed persisted evidence.',
+            'The engine interruption did not return a confirmed terminal result.',
             undefined,
             { cause: error },
           );

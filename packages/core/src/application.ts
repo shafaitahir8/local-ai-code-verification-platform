@@ -6,13 +6,20 @@ import type {
   ProjectDiscovery,
 } from '@verify/config';
 import { toVerificationSuites } from '@verify/config';
-import type { GateResult, RepositoryChange, VerificationRun } from '@verify/domain';
+import type {
+  GateResult,
+  ProjectProfileProgress,
+  ProjectProfileResult,
+  RepositoryChange,
+  VerificationRun,
+} from '@verify/domain';
 import { evaluateQualityGate } from '@verify/policy';
 import type { VerificationLifecycleEvent } from '@verify/verification';
 
 import { NoQualityGateError, NoVerificationRunError } from './errors.js';
 import type {
   ConfigurationPort,
+  ProjectProfilerPort,
   RepositoryPort,
   RunRepositoryPort,
   VerificationExecutorPort,
@@ -21,6 +28,7 @@ import type {
 export interface VerifierApplicationDependencies {
   readonly configuration: ConfigurationPort;
   readonly repository: RepositoryPort;
+  readonly profiler: ProjectProfilerPort;
   readonly verification: VerificationExecutorPort;
   readonly runs: RunRepositoryPort;
   readonly createRunId?: () => string;
@@ -47,9 +55,16 @@ export interface RunVerificationRequest {
   readonly onEvent?: (event: VerificationLifecycleEvent, runId: string) => void;
 }
 
+export interface ProfileProjectRequest {
+  readonly repository: string;
+  readonly signal?: AbortSignal;
+  readonly onProgress?: (progress: ProjectProfileProgress) => void;
+}
+
 export class VerifierApplication {
   readonly #configuration: ConfigurationPort;
   readonly #repository: RepositoryPort;
+  readonly #profiler: ProjectProfilerPort;
   readonly #verification: VerificationExecutorPort;
   readonly #runs: RunRepositoryPort;
   readonly #createRunId: () => string;
@@ -58,6 +73,7 @@ export class VerifierApplication {
   public constructor(dependencies: VerifierApplicationDependencies) {
     this.#configuration = dependencies.configuration;
     this.#repository = dependencies.repository;
+    this.#profiler = dependencies.profiler;
     this.#verification = dependencies.verification;
     this.#runs = dependencies.runs;
     this.#createRunId = dependencies.createRunId ?? randomUUID;
@@ -67,6 +83,15 @@ export class VerifierApplication {
   public async discover(repository: string): Promise<ProjectDiscovery> {
     const repositoryRoot = await this.#repository.resolveRoot(repository);
     return this.#configuration.discover(repositoryRoot);
+  }
+
+  public async profileProject(request: ProfileProjectRequest): Promise<ProjectProfileResult> {
+    const repositoryRoot = await this.#repository.resolveRoot(request.repository);
+    return this.#profiler.profile({
+      repositoryRoot,
+      ...(request.signal === undefined ? {} : { signal: request.signal }),
+      ...(request.onProgress === undefined ? {} : { onProgress: request.onProgress }),
+    });
   }
 
   public async getConfiguration(repository: string): Promise<ConfigurationState> {

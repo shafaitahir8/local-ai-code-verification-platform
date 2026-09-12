@@ -10,6 +10,7 @@ machine output, and the local protocol-v1 stdio server used by the desktop.
 ```bash
 pnpm verify init [repository] [--force] [--json]
 pnpm verify discover [repository] [--json]
+pnpm verify understand [repository] [--json]
 pnpm verify inspect [repository] [--json]
 pnpm verify run [repository] [--json]
 pnpm verify gate [repository] [--json]
@@ -20,6 +21,11 @@ pnpm verify protocol
 Repository commands default to the current directory. `protocol` accepts NDJSON on stdin and does
 not accept a repository argument. Exit codes are `0` for PASS/WARN, `1` for BLOCK, `2` for an
 execution/configuration error, and `3` for interruption. Help and version output exit successfully.
+
+`understand` builds a bounded deterministic `ProjectProfile` from repository metadata. Human output
+shows capabilities, observed task candidates, confidence, and evidence references. JSON output is
+the protocol-equivalent `{ status, profile? }` result. Profiling never executes observed commands,
+writes repository configuration, or creates verification history; Ctrl+C returns exit code 3.
 
 ## Allowed dependencies
 
@@ -43,7 +49,8 @@ remain owned by their packages.
 - JSON mode emits exactly one machine-readable document on stdout without progress noise.
 - Protocol mode reserves stdout for validated NDJSON frames and sends diagnostics to stderr.
 - Protocol mode keeps reading while ordinary requests execute, serializes those requests, and lets
-  `verification.cancel` interrupt an active or queued verification run.
+  `verification.cancel` interrupt an active or queued verification run and `operation.cancel`
+  interrupt a registered profiling operation.
 - The CLI and protocol call the same `VerifierApplication` instance and do not recalculate gates.
 - `init` never replaces an existing file without `--force`.
 - Operational errors and interruptions never become successful gates.
@@ -72,10 +79,10 @@ version 0.1.0. Exit meanings and JSON fields must not change silently.
     pnpm smoke:engine:windows
 
 Integration tests use real temporary Git repositories and command processes for init/inspect/run,
-PASS/WARN/BLOCK, invalid configuration, missing executables, active-command interruption,
-persistence, and repair history. They also spawn the bundled CLI in both human and JSON modes and
-exercise its NDJSON protocol as a real child process, including cancellation during output and
-before a queued run starts.
+PASS/WARN/BLOCK, invalid configuration, missing executables, active-command interruption, profiling
+without repository/database writes, persistence, and repair history. They also spawn the bundled
+CLI in both human and JSON modes and exercise its NDJSON protocol as a real child process, including
+correlated verification and profiling cancellation.
 The Windows smoke copies the engine outside the checkout, removes Node.js from its child `PATH`, and
 exercises real-repository PASS/WARN/BLOCK, history persistence, and protocol-mode argument handling.
 Set `VERIFY_ENGINE_PATH` to an installed/extracted sidecar path to run the same smoke against that

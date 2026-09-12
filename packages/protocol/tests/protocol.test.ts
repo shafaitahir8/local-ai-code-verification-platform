@@ -1,4 +1,4 @@
-import type { VerificationRun } from '@verify/domain';
+import type { ProjectProfileResult, VerificationRun } from '@verify/domain';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -68,6 +68,83 @@ function completedRun(): VerificationRun {
   };
 }
 
+function completedProfile(): ProjectProfileResult {
+  return {
+    status: 'completed',
+    profile: {
+      profileVersion: 1,
+      repositoryRoot: '/workspace/example',
+      displayName: 'example',
+      generatedAt: '2026-09-12T08:00:00.000Z',
+      completeness: 'complete',
+      scan: {
+        entriesScanned: 8,
+        filesScanned: 6,
+        directoriesScanned: 2,
+        bytesRead: 512,
+        skippedDirectories: 1,
+        elapsedMs: 12,
+        limitsReached: [],
+      },
+      capabilities: [
+        {
+          id: 'framework.vite',
+          kind: 'framework',
+          name: 'Vite',
+          confidence: 'confirmed',
+          evidenceIds: ['node.config.vite'],
+        },
+      ],
+      workspaceUnits: [
+        {
+          id: 'workspace.root',
+          path: '.',
+          name: 'example',
+          evidenceIds: ['node.manifest.package-json'],
+        },
+      ],
+      taskCandidates: [
+        {
+          id: 'task.root.test',
+          kind: 'test',
+          label: 'Run test (test)',
+          command: 'vitest run',
+          workingDirectory: '.',
+          workspaceId: 'workspace.root',
+          confidence: 'confirmed',
+          evidenceIds: ['node.script.test'],
+        },
+      ],
+      evidence: [
+        {
+          id: 'node.config.vite',
+          sensorId: 'node',
+          kind: 'config',
+          path: 'vite.config.ts',
+          summary: 'Vite configuration is present.',
+        },
+        {
+          id: 'node.manifest.package-json',
+          sensorId: 'node',
+          kind: 'manifest',
+          path: 'package.json',
+          summary: 'Node package manifest is present.',
+        },
+        {
+          id: 'node.script.test',
+          sensorId: 'node',
+          kind: 'script',
+          path: 'package.json',
+          pointer: ['scripts', 'test'],
+          summary: 'package.json declares the test script.',
+        },
+      ],
+      ambiguities: [],
+      warnings: [],
+    },
+  };
+}
+
 describe('protocol request codec', () => {
   it('round-trips a method-specific request as one NDJSON record', () => {
     const request = {
@@ -108,6 +185,34 @@ describe('protocol request codec', () => {
       id: request.id,
       result: { accepted: true },
     });
+  });
+
+  it('round-trips additive profiling and general cancellation requests', () => {
+    const profileRequest = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'profile-1',
+      method: 'project.profile',
+      params: { repository: '/workspace/example' },
+    } satisfies ProtocolRequest<'project.profile'>;
+    const cancelRequest = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'cancel-profile-1',
+      method: 'operation.cancel',
+      params: { targetRequestId: profileRequest.id },
+    } satisfies ProtocolRequest<'operation.cancel'>;
+
+    expect(decodeRequestLine(encodeRequest(profileRequest))).toEqual(profileRequest);
+    expect(decodeRequestLine(encodeRequest(cancelRequest))).toEqual(cancelRequest);
+    expect(
+      decodeResultLine(
+        'operation.cancel',
+        encodeResult('operation.cancel', {
+          protocolVersion: PROTOCOL_VERSION,
+          id: cancelRequest.id,
+          result: { accepted: true },
+        }),
+      ),
+    ).toMatchObject({ result: { accepted: true } });
   });
 
   it('rejects incompatible versions, unknown methods, extra fields, and malformed params', () => {
@@ -159,6 +264,72 @@ describe('protocol request codec', () => {
 });
 
 describe('server message codec', () => {
+  it('round-trips typed profile progress and terminal results', () => {
+    const progress: ProtocolEventMessage = {
+      protocolVersion: 1,
+      id: 'profile-1',
+      event: 'profile.progress',
+      data: {
+        phase: 'sensors',
+        message: 'Inspecting project metadata with node.',
+        entriesScanned: 8,
+        bytesRead: 128,
+        sensorsCompleted: 0,
+        sensorCount: 1,
+      },
+    };
+    const completed = completedProfile();
+
+    expect(decodeServerMessageLine(encodeEvent(progress))).toEqual(progress);
+    expect(
+      decodeResultLine(
+        'project.profile',
+        encodeResult('project.profile', {
+          protocolVersion: 1,
+          id: progress.id,
+          result: completed,
+        }),
+      ),
+    ).toEqual({ protocolVersion: 1, id: progress.id, result: completed });
+    expect(
+      decodeResultLine(
+        'project.profile',
+        encodeResult('project.profile', {
+          protocolVersion: 1,
+          id: 'profile-cancelled',
+          result: { status: 'cancelled' },
+        }),
+      ),
+    ).toMatchObject({ result: { status: 'cancelled' } });
+
+    if (completed.status !== 'completed') throw new Error('Expected a completed profile fixture.');
+    const partial: ProjectProfileResult = {
+      status: 'completed',
+      profile: {
+        ...completed.profile,
+        completeness: 'partial',
+        scan: { ...completed.profile.scan, limitsReached: ['entries'] },
+        warnings: [
+          {
+            code: 'SCAN_LIMIT_REACHED',
+            message: 'Project profiling reached the entries scan limit.',
+            affectsCompleteness: true,
+          },
+        ],
+      },
+    };
+    expect(
+      decodeResultLine(
+        'project.profile',
+        encodeResult('project.profile', {
+          protocolVersion: 1,
+          id: 'profile-partial',
+          result: partial,
+        }),
+      ),
+    ).toMatchObject({ result: { status: 'completed', profile: { completeness: 'partial' } } });
+  });
+
   it('round-trips output events without splitting embedded newlines', () => {
     const event: ProtocolEventMessage = {
       protocolVersion: 1,

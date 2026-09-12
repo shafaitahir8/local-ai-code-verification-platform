@@ -8,7 +8,11 @@ evaluates a gate, or persists results.
 
 ## Public behavior
 
-- Select or enter a local Git repository and inspect detected project/configuration state.
+- Select or enter a local Git repository and load a bounded, deterministic project profile without
+  blocking the existing configuration, Git, gate, or history requests.
+- Review evidence-backed project facts and observed command candidates, refresh them with
+  `Understand Project`, and stop an active scan without executing a candidate or writing profile
+  state.
 - Review branch, changed files, configured checks, current gate, live progress, and run history.
 - Initialize `.verify/project.yml`, run verification, interrupt an active request, and open the
   repository with keyboard-accessible controls.
@@ -30,6 +34,12 @@ Native requests are serialized to avoid concurrent migration/bootstrap races. De
 an explicit `VERIFY_ENGINE_COMMAND` plus `VERIFY_ENGINE_ARGS_JSON` (a JSON string array); release
 builds always resolve the bundled sidecar and ignore those development variables.
 
+The additive `project.profile` method and `profile.progress` events carry the same typed
+`ProjectProfile` produced by the headless core. `operation.cancel` generalizes correlated
+cancellation for profiling while the existing `verification.cancel` contract remains supported.
+The bridge validates the terminal result according to the target method: profiling cancellation
+does not require or create a persisted verification run.
+
 `pnpm --filter @verify/desktop dev` runs a browser-only visual preview with deterministic mock data;
 query parameters `?scenario=WARN`, `?scenario=BLOCK`, and `?uninitialized=1` exercise major states.
 That preview does not claim native/core integration.
@@ -47,9 +57,9 @@ unrestricted remote commands, network servers, telemetry, cloud services, and AI
 
 ## Data owned
 
-Ephemeral dashboard/view state, theme preference, progress presentation, repository-input state,
-request correlation, and native child-process IDs. Configuration and run history remain owned by the
-headless engine.
+Ephemeral dashboard/view state, theme preference, profile and verification progress presentation,
+repository-input state, request correlation, and native child-process IDs. Configuration and run
+history remain owned by the headless engine. Project profiles are not persisted.
 
 ## Important invariants
 
@@ -58,8 +68,11 @@ headless engine.
 - Controls remain keyboard reachable with visible focus, focus restoration, live regions, reduced
   motion, high contrast, and light/dark compatibility.
 - Native sidecar stdout is bounded, UTF-8 NDJSON and is correlated before it crosses the IPC channel.
-- Graceful cancellation first requests a persisted cancelled run over protocol; an unresponsive
-  engine is terminated after a bounded grace period.
+- Project profiling is read-only: observed scripts remain non-executable candidates, and the
+  profile-only path writes no repository, configuration, or SQLite state.
+- Graceful cancellation uses `operation.cancel` for project profiling and retains the last completed
+  profile. Verification continues to use `verification.cancel` and first requests a persisted
+  cancelled run; an unresponsive engine is terminated after a bounded grace period.
 - On Windows, the sidecar and descendants are assigned to a kill-on-close Job Object so fallback
   cleanup cannot intentionally leave a verification process tree behind.
 
@@ -101,3 +114,7 @@ split/coalesced protocol frames and graceful cancellation state. A child-process
 compares the GUI protocol client with CLI JSON output from the same headless engine. Native Rust,
 sidecar, installer, outside-checkout workflow, Node-independence, persistence, and process-cleanup
 results must be recorded separately because browser tests cannot prove them.
+
+The implemented Iteration 5 surface is limited to the first single-root Node/Vite/Vitest profile
+slice. Iteration 5 as a whole is not complete; broader ecosystems, AI, planning, schema-v2 behavior,
+and smart command execution are intentionally absent.

@@ -8,6 +8,9 @@ import type {
   LatestGateResult,
   LiveCheck,
   LoadPhase,
+  ProfilePhase,
+  ProjectProfile,
+  ProjectProfileProgress,
   RunsResult,
   RunPhase,
   VerificationRun,
@@ -26,7 +29,11 @@ export interface DashboardController {
   readonly repository: string;
   readonly loadPhase: LoadPhase;
   readonly runPhase: RunPhase;
+  readonly profilePhase: ProfilePhase;
   readonly discovery?: DiscoveryResult;
+  readonly profile?: ProjectProfile;
+  readonly profileProgress?: ProjectProfileProgress;
+  readonly profileError?: string;
   readonly config?: ConfigResult;
   readonly inspection?: InspectionResult;
   readonly latestGate?: LatestGateResult;
@@ -39,6 +46,8 @@ export interface DashboardController {
   readonly liveAnnouncement: string;
   readonly error?: string;
   readonly openRepository: (repository: string) => Promise<void>;
+  readonly understandProject: () => Promise<void>;
+  readonly stopProjectProfile: () => void;
   readonly initializeProject: () => Promise<void>;
   readonly runVerification: () => Promise<void>;
   readonly stopVerification: () => void;
@@ -52,7 +61,11 @@ export function useDashboard(
   const [repository, setRepository] = useState('');
   const [loadPhase, setLoadPhase] = useState<LoadPhase>('empty');
   const [runPhase, setRunPhase] = useState<RunPhase>('idle');
+  const [profilePhase, setProfilePhase] = useState<ProfilePhase>('idle');
   const [discovery, setDiscovery] = useState<DiscoveryResult>();
+  const [profile, setProfile] = useState<ProjectProfile>();
+  const [profileProgress, setProfileProgress] = useState<ProjectProfileProgress>();
+  const [profileError, setProfileError] = useState<string>();
   const [config, setConfig] = useState<ConfigResult>();
   const [inspection, setInspection] = useState<InspectionResult>();
   const [latestGate, setLatestGate] = useState<LatestGateResult>();
@@ -65,7 +78,77 @@ export function useDashboard(
   const [error, setError] = useState<string>();
   const loadGeneration = useRef(0);
   const runController = useRef<AbortController | undefined>(undefined);
+  const profileController = useRef<AbortController | undefined>(undefined);
+  const currentRepository = useRef('');
   const initialRepositoryOpened = useRef(false);
+
+  const requestProjectProfile = useCallback(
+    async (selectedRepository: string, generation: number) => {
+      const controller = new AbortController();
+      profileController.current?.abort();
+      profileController.current = controller;
+      setProfilePhase('running');
+      setProfileProgress(undefined);
+      setProfileError(undefined);
+      setLiveAnnouncement(`Understanding ${selectedRepository}.`);
+
+      try {
+        const result = await client.request(
+          'project.profile',
+          { repository: selectedRepository },
+          {
+            signal: controller.signal,
+            onEvent: (event) => {
+              if (
+                event.event !== 'profile.progress' ||
+                generation !== loadGeneration.current ||
+                profileController.current !== controller
+              ) {
+                return;
+              }
+              setProfileProgress(event.data);
+              setLiveAnnouncement(event.data.message);
+            },
+          },
+        );
+
+        if (generation !== loadGeneration.current || profileController.current !== controller) {
+          return;
+        }
+
+        if (result.status === 'cancelled') {
+          setProfilePhase('cancelled');
+          setLiveAnnouncement('Project scan stopped. The last completed profile is unchanged.');
+          return;
+        }
+
+        setProfile(result.profile);
+        setProfilePhase('completed');
+        setLiveAnnouncement(
+          result.profile.completeness === 'partial'
+            ? `${result.profile.displayName} was understood with partial coverage.`
+            : `${result.profile.displayName} project profile is ready.`,
+        );
+      } catch (profileRequestError) {
+        if (generation !== loadGeneration.current || profileController.current !== controller) {
+          return;
+        }
+
+        setProfilePhase('error');
+        setProfileError(errorMessage(profileRequestError));
+        setLiveAnnouncement(
+          controller.signal.aborted
+            ? 'Project scan interruption was not confirmed. The last completed profile is unchanged.'
+            : 'Project profiling failed. Existing repository details remain usable.',
+        );
+      } finally {
+        if (profileController.current === controller) {
+          profileController.current = undefined;
+        }
+      }
+    },
+    [client],
+  );
 
   const openRepository = useCallback(
     async (nextRepository: string) => {
@@ -79,9 +162,18 @@ export function useDashboard(
       const generation = loadGeneration.current + 1;
       loadGeneration.current = generation;
       runController.current?.abort();
+      profileController.current?.abort();
+      const repositoryChanged = currentRepository.current !== selectedRepository;
+      currentRepository.current = selectedRepository;
+      if (repositoryChanged) {
+        setProfile(undefined);
+      }
       setRepository(selectedRepository);
       setLoadPhase('loading');
       setRunPhase('idle');
+      setProfilePhase('idle');
+      setProfileProgress(undefined);
+      setProfileError(undefined);
       setError(undefined);
       setSelectedHistoryId(undefined);
       setActiveRun(undefined);
@@ -110,6 +202,7 @@ export function useDashboard(
         setHistory(nextHistory.runs);
         setLoadPhase('ready');
         setLiveAnnouncement(`${nextDiscovery.projectName} is ready.`);
+        void requestProjectProfile(selectedRepository, generation);
       } catch (loadError) {
         if (generation !== loadGeneration.current) {
           return;
@@ -119,8 +212,25 @@ export function useDashboard(
         setLiveAnnouncement('Repository loading failed.');
       }
     },
-    [client],
+    [client, requestProjectProfile],
   );
+
+  const understandProject = useCallback(async () => {
+    if (!repository || loadPhase !== 'ready') {
+      return;
+    }
+    await requestProjectProfile(repository, loadGeneration.current);
+  }, [loadPhase, repository, requestProjectProfile]);
+
+  const stopProjectProfile = useCallback(() => {
+    const controller = profileController.current;
+    if (controller === undefined || controller.signal.aborted) {
+      return;
+    }
+    setProfilePhase('cancelling');
+    setLiveAnnouncement('Stopping the project scan.');
+    controller.abort();
+  }, []);
 
   useEffect(() => {
     if (!initialRepository || initialRepositoryOpened.current) {
@@ -134,6 +244,7 @@ export function useDashboard(
     () => () => {
       loadGeneration.current += 1;
       runController.current?.abort();
+      profileController.current?.abort();
     },
     [],
   );
@@ -294,7 +405,11 @@ export function useDashboard(
     repository,
     loadPhase,
     runPhase,
+    profilePhase,
     discovery,
+    profile,
+    profileProgress,
+    profileError,
     config,
     inspection,
     latestGate,
@@ -307,6 +422,8 @@ export function useDashboard(
     liveAnnouncement,
     error,
     openRepository,
+    understandProject,
+    stopProjectProfile,
     initializeProject,
     runVerification,
     stopVerification,

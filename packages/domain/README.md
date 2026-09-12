@@ -8,6 +8,7 @@ transformations.
 ## Public API
 
 - Project identity and normalized verification models.
+- Versioned project-profile, evidence, confidence, scan, progress, and cancellation records.
 - Repository change, Git reference, and line-statistic models.
 - PASS/WARN/BLOCK status records and summary helpers.
 - Predicates for terminal and unsuccessful check states.
@@ -23,14 +24,16 @@ and verification-tool-specific models.
 
 ## Data owned
 
-Projects, checks, normalized results, findings, artifacts, gate outcomes, runs, and repository change
-snapshots.
+Projects, project profiles, checks, normalized results, findings, artifacts, gate outcomes, runs,
+and repository change snapshots.
 
 ## Important invariants
 
 - Gate statuses are uppercase `PASS`, `WARN`, or `BLOCK`.
 - Unknown line counts are represented by `null`; they are never guessed.
 - Framework-specific evidence is expressed through generic findings and artifacts.
+- Project-profile capabilities use portable categories, stable evidence references, and distinguish
+  a completed partial scan from a cancelled operation with no profile.
 - Timestamps are ISO-8601 strings at package boundaries.
 
 ## Security and privacy

@@ -2,8 +2,9 @@
 
 ## Status
 
-Ready for implementation in a separate milestone. ADR-009 through ADR-014 are accepted; no
-Iteration 5 code is included in the roadmap-reset change.
+In progress. ADR-009 through ADR-014 are accepted, and the first 5A Node/Vite/Vitest vertical slice
+is implemented and validated across core, protocol, CLI, native bridge, and desktop. TASK-014
+remains open for the ordered 5B and 5C ecosystem, ambiguity, and regression coverage below.
 
 ## Goal
 
@@ -255,6 +256,7 @@ smoke before declaring the iteration complete.
 
 ## Next safe step
 
-Implement the versioned domain profile and sensor contract with the Node/Vite/Vitest fixture first,
-then expose that unchanged result through core, `project.profile`, `verify understand`, and the
-desktop. Do not add Iteration 6 planning or Iteration 7 AI behavior.
+Implement only slice 5B: add fixture-driven Jest and plain-static-site profiling, including the
+regression that keeps a Vite `index.html` classified as Vite rather than a plain site. Reuse the
+existing profile, sensor, core, protocol, CLI, native, and desktop contracts; do not add execution,
+Iteration 6 planning, or Iteration 7 AI behavior.

@@ -5,6 +5,16 @@ import type {
   GateResult,
   GitReference,
   LineStatistics,
+  ProjectCapability,
+  ProjectEvidence,
+  ProjectProfile,
+  ProjectProfileAmbiguity,
+  ProjectProfileProgress,
+  ProjectProfileResult,
+  ProjectProfileWarning,
+  ProjectScanStatistics,
+  ProjectTaskCandidate,
+  ProjectWorkspaceUnit,
   RepositoryChange,
   VerificationCheck,
   VerificationCheckResult,
@@ -102,6 +112,109 @@ export const repositoryChangeSchema: z.ZodType<RepositoryChange> = z.strictObjec
   hasUnknownStatistics: z.boolean(),
   files: z.array(changedFileSchema),
 });
+
+export const projectEvidenceSchema: z.ZodType<ProjectEvidence> = z.strictObject({
+  id: z.string().min(1),
+  sensorId: z.string().min(1),
+  kind: z.enum(['manifest', 'config', 'lockfile', 'script', 'path', 'convention']),
+  path: z.string().min(1),
+  pointer: z.array(z.string().min(1)).optional(),
+  summary: z.string().min(1),
+});
+
+export const projectCapabilitySchema: z.ZodType<ProjectCapability> = z.strictObject({
+  id: z.string().min(1),
+  kind: z.enum([
+    'language',
+    'framework',
+    'package-manager',
+    'workspace-system',
+    'test-framework',
+    'build-tool',
+    'linter',
+    'typechecker',
+    'runtime',
+    'preview',
+  ]),
+  name: z.string().min(1),
+  confidence: z.enum(['confirmed', 'strong', 'tentative']),
+  evidenceIds: z.array(z.string().min(1)).min(1),
+});
+
+export const projectWorkspaceUnitSchema: z.ZodType<ProjectWorkspaceUnit> = z.strictObject({
+  id: z.string().min(1),
+  path: z.string().min(1),
+  name: z.string().min(1).optional(),
+  evidenceIds: z.array(z.string().min(1)).min(1),
+});
+
+export const projectTaskCandidateSchema: z.ZodType<ProjectTaskCandidate> = z.strictObject({
+  id: z.string().min(1),
+  kind: z.enum(['test', 'build', 'lint', 'typecheck', 'run', 'preview']),
+  label: z.string().min(1),
+  command: z.string().min(1),
+  workingDirectory: z.string().min(1),
+  workspaceId: z.string().min(1).optional(),
+  confidence: z.enum(['confirmed', 'strong', 'tentative']),
+  evidenceIds: z.array(z.string().min(1)).min(1),
+});
+
+export const projectProfileAmbiguitySchema: z.ZodType<ProjectProfileAmbiguity> = z.strictObject({
+  code: z.string().min(1),
+  message: z.string().min(1),
+  candidateIds: z.array(z.string().min(1)),
+  evidenceIds: z.array(z.string().min(1)).min(1),
+});
+
+export const projectProfileWarningSchema: z.ZodType<ProjectProfileWarning> = z.strictObject({
+  code: z.string().min(1),
+  message: z.string().min(1),
+  sensorId: z.string().min(1).optional(),
+  path: z.string().min(1).optional(),
+  affectsCompleteness: z.boolean(),
+});
+
+export const projectScanStatisticsSchema: z.ZodType<ProjectScanStatistics> = z.strictObject({
+  entriesScanned: z.number().int().nonnegative(),
+  filesScanned: z.number().int().nonnegative(),
+  directoriesScanned: z.number().int().nonnegative(),
+  bytesRead: z.number().int().nonnegative(),
+  skippedDirectories: z.number().int().nonnegative(),
+  elapsedMs: z.number().int().nonnegative(),
+  limitsReached: z.array(z.enum(['entries', 'file-bytes', 'aggregate-bytes', 'elapsed-time'])),
+});
+
+export const projectProfileSchema: z.ZodType<ProjectProfile> = z.strictObject({
+  profileVersion: z.literal(1),
+  repositoryRoot: z.string().min(1),
+  displayName: z.string().min(1),
+  generatedAt: z.iso.datetime(),
+  completeness: z.enum(['complete', 'partial']),
+  scan: projectScanStatisticsSchema,
+  capabilities: z.array(projectCapabilitySchema),
+  workspaceUnits: z.array(projectWorkspaceUnitSchema),
+  taskCandidates: z.array(projectTaskCandidateSchema),
+  evidence: z.array(projectEvidenceSchema),
+  ambiguities: z.array(projectProfileAmbiguitySchema),
+  warnings: z.array(projectProfileWarningSchema),
+});
+
+export const projectProfileProgressSchema: z.ZodType<ProjectProfileProgress> = z.strictObject({
+  phase: z.enum(['inventory', 'sensors', 'finalizing']),
+  message: z.string().min(1),
+  entriesScanned: z.number().int().nonnegative(),
+  bytesRead: z.number().int().nonnegative(),
+  sensorsCompleted: z.number().int().nonnegative(),
+  sensorCount: z.number().int().nonnegative(),
+});
+
+export const projectProfileResultSchema: z.ZodType<ProjectProfileResult> = z.discriminatedUnion(
+  'status',
+  [
+    z.strictObject({ status: z.literal('completed'), profile: projectProfileSchema }),
+    z.strictObject({ status: z.literal('cancelled') }),
+  ],
+);
 
 export const verificationCheckSchema: z.ZodType<VerificationCheck> = z.strictObject({
   id: z.string().min(1),

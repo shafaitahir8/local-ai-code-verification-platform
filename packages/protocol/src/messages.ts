@@ -4,6 +4,7 @@ import {
   verificationCheckResultSchema,
   verificationCheckSchema,
   verificationRunSchema,
+  projectProfileProgressSchema,
 } from './domain-schemas.js';
 import {
   PROTOCOL_VERSION,
@@ -26,11 +27,13 @@ function requestSchema<Method extends ProtocolMethod>(method: Method) {
 
 export const protocolRequestSchema = z.discriminatedUnion('method', [
   requestSchema('project.discover'),
+  requestSchema('project.profile'),
   requestSchema('config.get'),
   requestSchema('config.init'),
   requestSchema('repository.inspect'),
   requestSchema('verification.run'),
   requestSchema('verification.cancel'),
+  requestSchema('operation.cancel'),
   requestSchema('gate.latest'),
   requestSchema('runs.list'),
 ]);
@@ -45,6 +48,12 @@ export type ProtocolRequest<Method extends ProtocolMethod = ProtocolMethod> = {
 }[Method];
 
 export const protocolEventSchema = z.discriminatedUnion('event', [
+  z.strictObject({
+    protocolVersion: z.literal(PROTOCOL_VERSION),
+    id: requestIdSchema,
+    event: z.literal('profile.progress'),
+    data: projectProfileProgressSchema,
+  }),
   z.strictObject({
     protocolVersion: z.literal(PROTOCOL_VERSION),
     id: requestIdSchema,

@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import {
   gateResultSchema,
+  projectProfileResultSchema,
   repositoryChangeSchema,
   verificationRunSchema,
 } from './domain-schemas.js';
@@ -53,11 +54,13 @@ export const projectDiscoveryResultSchema = z.strictObject({
 
 export const protocolParamsSchemas = {
   'project.discover': repositoryParamsSchema,
+  'project.profile': repositoryParamsSchema,
   'config.get': repositoryParamsSchema,
   'config.init': repositoryParamsSchema.extend({ force: z.boolean().optional() }),
   'repository.inspect': repositoryParamsSchema,
   'verification.run': repositoryParamsSchema,
   'verification.cancel': z.strictObject({ targetRequestId: requestIdSchema }),
+  'operation.cancel': z.strictObject({ targetRequestId: requestIdSchema }),
   'gate.latest': repositoryParamsSchema,
   'runs.list': repositoryParamsSchema.extend({
     limit: z.number().int().min(1).max(100).optional(),
@@ -66,6 +69,7 @@ export const protocolParamsSchemas = {
 
 export const protocolResultSchemas = {
   'project.discover': projectDiscoveryResultSchema,
+  'project.profile': projectProfileResultSchema,
   'config.get': z.strictObject({
     exists: z.boolean(),
     path: z.string().min(1),
@@ -80,6 +84,7 @@ export const protocolResultSchemas = {
   'repository.inspect': repositoryChangeSchema,
   'verification.run': verificationRunSchema,
   'verification.cancel': z.strictObject({ accepted: z.boolean() }),
+  'operation.cancel': z.strictObject({ accepted: z.boolean() }),
   'gate.latest': z
     .strictObject({
       runId: z.string().min(1),

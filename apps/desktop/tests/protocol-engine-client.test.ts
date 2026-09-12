@@ -118,6 +118,59 @@ describe('ProtocolEngineClient', () => {
     );
   });
 
+  it('preserves the exact project profile and forwards correlated progress events', async () => {
+    const repository = 'C:\\work\\profile-equivalence-project';
+    const expected = await createMockEngineClient({ latencyMs: 0 }).request('project.profile', {
+      repository,
+    });
+    expect(expected.status).toBe('completed');
+    const progress = {
+      phase: 'sensors' as const,
+      message: 'Inspecting Node project evidence.',
+      entriesScanned: 18,
+      bytesRead: 2_048,
+      sensorsCompleted: 0,
+      sensorCount: 1,
+    };
+    const transport: EngineTransport = {
+      request: async (requestLine, onChunk) => {
+        const request = decodeRequestLine(requestLine);
+        expect(request).toMatchObject({
+          protocolVersion: PROTOCOL_VERSION,
+          id: 'profile-equivalence-id',
+          method: 'project.profile',
+          params: { repository },
+        });
+        onChunk(
+          encodeEvent({
+            protocolVersion: PROTOCOL_VERSION,
+            id: request.id,
+            event: 'profile.progress',
+            data: progress,
+          }),
+        );
+        onChunk(
+          encodeResult('project.profile', {
+            protocolVersion: PROTOCOL_VERSION,
+            id: request.id,
+            result: expected,
+          }),
+        );
+      },
+    };
+    const event = vi.fn();
+    const client = new ProtocolEngineClient(transport, {
+      createRequestId: () => 'profile-equivalence-id',
+    });
+
+    await expect(
+      client.request('project.profile', { repository }, { onEvent: event }),
+    ).resolves.toStrictEqual(expected);
+    expect(event).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ event: 'profile.progress', data: progress }),
+    );
+  });
+
   it('returns a persisted cancelled terminal after the caller requests interruption', async () => {
     const repository = 'C:\\work\\cancelled-project';
     const completed = await createMockEngineClient({ latencyMs: 0 }).request('verification.run', {

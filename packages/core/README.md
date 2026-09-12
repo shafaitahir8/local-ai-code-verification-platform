@@ -2,15 +2,15 @@
 
 ## Purpose
 
-Owns the deterministic application use cases shared by every interface: discover, initialize,
-inspect, run verification, retrieve the latest gate, and list history. It protects the boundary
-between interface composition and application behavior.
+Owns the deterministic application use cases shared by every interface: profile, discover,
+initialize, inspect, run verification, retrieve the latest gate, and list history. It protects the
+boundary between interface composition and application behavior.
 
 ## Public API
 
 - `VerifierApplication`: orchestrates all supported use cases through injected ports.
-- `ConfigurationPort`, `RepositoryPort`, `VerificationExecutorPort`, and `RunRepositoryPort`:
-  application-facing boundary contracts.
+- `ProjectProfilerPort`, `ConfigurationPort`, `RepositoryPort`, `VerificationExecutorPort`, and
+  `RunRepositoryPort`: application-facing boundary contracts.
 - Request and dependency types for initialization and verification.
 - `NoVerificationRunError` and `NoQualityGateError`: explicit history-state failures.
 
@@ -40,6 +40,8 @@ persistence by the injected run repository.
   retain a PASS gate.
 - Lifecycle events preserve run/check identity and ordering.
 - Core never instantiates concrete infrastructure.
+- Profiling resolves the canonical Git root once, delegates through `ProjectProfilerPort`, and never
+  loads configuration, executes checks, or touches run storage.
 
 ## Security and privacy
 

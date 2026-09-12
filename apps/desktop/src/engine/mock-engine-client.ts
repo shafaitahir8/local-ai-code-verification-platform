@@ -13,12 +13,21 @@ export interface MockEngineClientOptions {
   readonly gateScenario?: MockGateScenario;
   readonly configExists?: boolean;
   readonly latencyMs?: number;
+  readonly profileLatencyMs?: number;
+  readonly verificationCancellationLatencyMs?: number;
   readonly failMethod?: ProtocolMethod;
+  readonly profileCompleteness?: 'complete' | 'partial';
+  readonly profileAmbiguous?: boolean;
+  readonly rejectProfileCancellation?: boolean;
 }
 
 type VerificationRun = ProtocolResultMap['verification.run'];
 type CheckResult = VerificationRun['checks'][number];
 type ProjectConfig = NonNullable<ProtocolResultMap['config.get']['config']>;
+type ProjectProfile = Extract<
+  ProtocolResultMap['project.profile'],
+  { status: 'completed' }
+>['profile'];
 
 const BASE_TIME = Date.parse('2026-09-07T14:20:00.000Z');
 
@@ -29,6 +38,192 @@ function iso(offsetMs: number): string {
 function projectName(repository: string): string {
   const parts = repository.split(/[\\/]/).filter(Boolean);
   return parts.at(-1) ?? 'local-project';
+}
+
+function projectProfile(
+  repository: string,
+  completeness: ProjectProfile['completeness'],
+  ambiguous: boolean,
+): ProjectProfile {
+  const name = projectName(repository);
+  const evidence = [
+    {
+      id: 'node:manifest',
+      sensorId: 'node',
+      kind: 'manifest' as const,
+      path: 'package.json',
+      summary: 'package.json declares a Node project.',
+    },
+    {
+      id: 'node:package-manager',
+      sensorId: 'node',
+      kind: 'manifest' as const,
+      path: 'package.json',
+      pointer: ['packageManager'],
+      summary: 'packageManager declares pnpm.',
+    },
+    {
+      id: 'node:vite',
+      sensorId: 'node',
+      kind: 'config' as const,
+      path: 'vite.config.ts',
+      summary: 'A Vite configuration file is present.',
+    },
+    {
+      id: 'node:typescript',
+      sensorId: 'node',
+      kind: 'config' as const,
+      path: 'tsconfig.json',
+      summary: 'A TypeScript configuration file is present.',
+    },
+    {
+      id: 'node:vitest',
+      sensorId: 'node',
+      kind: 'config' as const,
+      path: 'vitest.config.ts',
+      summary: 'A Vitest configuration file is present.',
+    },
+    {
+      id: 'node:test-path',
+      sensorId: 'node',
+      kind: 'path' as const,
+      path: 'tests/main.test.ts',
+      summary: 'A conventional Vitest test file is present.',
+    },
+    ...['test', 'build', 'lint', 'typecheck'].map((script) => ({
+      id: `node:script:${script}`,
+      sensorId: 'node',
+      kind: 'script' as const,
+      path: 'package.json',
+      pointer: ['scripts', script],
+      summary: `package.json declares the ${script} script.`,
+    })),
+    ...(ambiguous
+      ? [
+          {
+            id: 'node:npm-lock',
+            sensorId: 'node',
+            kind: 'lockfile' as const,
+            path: 'package-lock.json',
+            summary: 'An npm lockfile is also present.',
+          },
+        ]
+      : []),
+  ];
+
+  return {
+    profileVersion: 1,
+    repositoryRoot: repository,
+    displayName: name,
+    generatedAt: iso(0),
+    completeness,
+    scan: {
+      entriesScanned: 18,
+      filesScanned: 13,
+      directoriesScanned: 5,
+      bytesRead: 2_048,
+      skippedDirectories: 2,
+      elapsedMs: 24,
+      limitsReached: completeness === 'partial' ? ['entries'] : [],
+    },
+    capabilities: [
+      {
+        id: 'runtime.node',
+        kind: 'runtime',
+        name: 'Node.js',
+        confidence: 'confirmed',
+        evidenceIds: ['node:manifest'],
+      },
+      {
+        id: 'language.typescript',
+        kind: 'language',
+        name: 'TypeScript',
+        confidence: 'confirmed',
+        evidenceIds: ['node:typescript'],
+      },
+      {
+        id: 'package-manager.pnpm',
+        kind: 'package-manager',
+        name: 'pnpm',
+        confidence: 'confirmed',
+        evidenceIds: ['node:package-manager'],
+      },
+      {
+        id: 'framework.vite',
+        kind: 'framework',
+        name: 'Vite',
+        confidence: 'confirmed',
+        evidenceIds: ['node:vite'],
+      },
+      {
+        id: 'build-tool.vite',
+        kind: 'build-tool',
+        name: 'Vite',
+        confidence: 'confirmed',
+        evidenceIds: ['node:vite'],
+      },
+      {
+        id: 'test-framework.vitest',
+        kind: 'test-framework',
+        name: 'Vitest',
+        confidence: 'confirmed',
+        evidenceIds: ['node:vitest', 'node:test-path'],
+      },
+      {
+        id: 'typechecker.typescript',
+        kind: 'typechecker',
+        name: 'TypeScript',
+        confidence: 'confirmed',
+        evidenceIds: ['node:typescript'],
+      },
+    ],
+    workspaceUnits: [
+      {
+        id: 'workspace.root',
+        path: '.',
+        name,
+        evidenceIds: ['node:manifest'],
+      },
+    ],
+    taskCandidates: (
+      [
+        ['test', 'Run test (test)', 'vitest run'],
+        ['build', 'Run build (build)', 'vite build'],
+        ['lint', 'Run lint (lint)', 'eslint .'],
+        ['typecheck', 'Run typecheck (typecheck)', 'tsc --noEmit'],
+      ] as const
+    ).map(([kind, label, command]) => ({
+      id: `task.root.${kind}`,
+      kind,
+      label,
+      command,
+      workingDirectory: '.',
+      workspaceId: 'workspace.root',
+      confidence: 'confirmed' as const,
+      evidenceIds: [`node:script:${kind}`],
+    })),
+    evidence,
+    ambiguities: ambiguous
+      ? [
+          {
+            code: 'package-manager-conflict',
+            message: 'Both pnpm and npm package-manager evidence is present.',
+            candidateIds: ['package-manager.pnpm'],
+            evidenceIds: ['node:package-manager', 'node:npm-lock'],
+          },
+        ]
+      : [],
+    warnings:
+      completeness === 'partial'
+        ? [
+            {
+              code: 'scan-entry-limit',
+              message: 'The entry limit was reached; this profile has partial coverage.',
+              affectsCompleteness: true,
+            },
+          ]
+        : [],
+  };
 }
 
 function configFor(repository: string): ProjectConfig {
@@ -253,14 +448,24 @@ async function pause(milliseconds: number, signal?: AbortSignal): Promise<void> 
 export class MockEngineClient implements EngineClient {
   readonly #scenario: MockGateScenario;
   readonly #latencyMs: number;
+  readonly #profileLatencyMs: number;
+  readonly #verificationCancellationLatencyMs: number;
   readonly #failMethod?: ProtocolMethod;
+  readonly #profileCompleteness: ProjectProfile['completeness'];
+  readonly #profileAmbiguous: boolean;
+  readonly #rejectProfileCancellation: boolean;
   #configExists: boolean;
 
   public constructor(options: MockEngineClientOptions = {}) {
     this.#scenario = options.gateScenario ?? 'PASS';
     this.#configExists = options.configExists ?? true;
     this.#latencyMs = options.latencyMs ?? 40;
+    this.#profileLatencyMs = options.profileLatencyMs ?? this.#latencyMs;
+    this.#verificationCancellationLatencyMs = options.verificationCancellationLatencyMs ?? 0;
     this.#failMethod = options.failMethod;
+    this.#profileCompleteness = options.profileCompleteness ?? 'complete';
+    this.#profileAmbiguous = options.profileAmbiguous ?? false;
+    this.#rejectProfileCancellation = options.rejectProfileCancellation ?? false;
   }
 
   public async request<Method extends ProtocolMethod>(
@@ -268,13 +473,15 @@ export class MockEngineClient implements EngineClient {
     params: ProtocolParamsMap[Method],
     options: EngineRequestOptions = {},
   ): Promise<ProtocolResultMap[Method]> {
-    await pause(this.#latencyMs, method === 'verification.run' ? undefined : options.signal);
+    if (method !== 'project.profile') {
+      await pause(this.#latencyMs, method === 'verification.run' ? undefined : options.signal);
+    }
 
     if (this.#failMethod === method) {
       throw new EngineRequestError('MOCK_ERROR', `Mock failure while calling ${method}.`);
     }
 
-    if (method === 'verification.cancel') {
+    if (method === 'verification.cancel' || method === 'operation.cancel') {
       return { accepted: false } as ProtocolResultMap[Method];
     }
 
@@ -319,6 +526,61 @@ export class MockEngineClient implements EngineClient {
           ],
           warnings: [],
         } as ProtocolResultMap[Method];
+
+      case 'project.profile': {
+        const progress = [
+          {
+            phase: 'inventory' as const,
+            message: 'Scanning repository metadata.',
+            entriesScanned: 9,
+            bytesRead: 0,
+            sensorsCompleted: 0,
+            sensorCount: 1,
+          },
+          {
+            phase: 'sensors' as const,
+            message: 'Inspecting Node project evidence.',
+            entriesScanned: 18,
+            bytesRead: 2_048,
+            sensorsCompleted: 0,
+            sensorCount: 1,
+          },
+          {
+            phase: 'finalizing' as const,
+            message: 'Finalizing the deterministic project profile.',
+            entriesScanned: 18,
+            bytesRead: 2_048,
+            sensorsCompleted: 1,
+            sensorCount: 1,
+          },
+        ];
+
+        for (const data of progress) {
+          if (options.signal?.aborted) {
+            return { status: 'cancelled' } as ProtocolResultMap[Method];
+          }
+          options.onEvent?.({
+            protocolVersion: 1,
+            id: 'mock-profile-event',
+            event: 'profile.progress',
+            data,
+          });
+          try {
+            await pause(this.#profileLatencyMs, options.signal);
+          } catch (error) {
+            if (error instanceof EngineRequestError && error.code === 'INTERRUPTED') {
+              if (this.#rejectProfileCancellation) throw error;
+              return { status: 'cancelled' } as ProtocolResultMap[Method];
+            }
+            throw error;
+          }
+        }
+
+        return {
+          status: 'completed',
+          profile: projectProfile(repository, this.#profileCompleteness, this.#profileAmbiguous),
+        } as ProtocolResultMap[Method];
+      }
 
       case 'config.get':
         return {
@@ -449,6 +711,7 @@ export class MockEngineClient implements EngineClient {
             if (!(error instanceof EngineRequestError) || error.code !== 'INTERRUPTED') {
               throw error;
             }
+            await pause(this.#verificationCancellationLatencyMs);
             const completedAt = new Date().toISOString();
             const cancelledResult: CheckResult = {
               ...result,

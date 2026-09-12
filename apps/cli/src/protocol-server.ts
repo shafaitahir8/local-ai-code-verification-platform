@@ -29,7 +29,17 @@ interface ProtocolWriter {
 
 interface ProtocolRequestContext {
   readonly signal?: AbortSignal;
-  readonly cancelTarget?: (targetRequestId: string) => boolean;
+  readonly cancelTarget?: (
+    targetRequestId: string,
+    expectedMethod?: CancellableProtocolMethod,
+  ) => boolean;
+}
+
+type CancellableProtocolMethod = 'project.profile' | 'verification.run';
+
+interface CancellableOperation {
+  readonly method: CancellableProtocolMethod;
+  readonly controller: AbortController;
 }
 
 function yieldForCancellationFrames(): Promise<void> {
@@ -38,7 +48,7 @@ function yieldForCancellationFrames(): Promise<void> {
 
 class ProtocolSession {
   readonly #activeRequestIds = new Set<string>();
-  readonly #activeRuns = new Map<string, AbortController>();
+  readonly #cancellableOperations = new Map<string, CancellableOperation>();
   readonly #operations = new Set<Promise<void>>();
   #serial: Promise<void> = Promise.resolve();
 
@@ -61,18 +71,26 @@ class ProtocolSession {
 
     this.#activeRequestIds.add(request.id);
 
-    if (request.method === 'verification.cancel') {
+    if (request.method === 'verification.cancel' || request.method === 'operation.cancel') {
       const operation = handleProtocolRequest(this.application, request, this.writer, {
-        cancelTarget: (targetRequestId) => this.#cancel(targetRequestId),
+        cancelTarget: (targetRequestId, expectedMethod) =>
+          this.#cancel(targetRequestId, expectedMethod),
       }).finally(() => this.#activeRequestIds.delete(request.id));
       this.#track(operation);
       return;
     }
 
-    const controller = request.method === 'verification.run' ? new AbortController() : undefined;
-    if (controller !== undefined) {
-      // Registration is synchronous so a following cancel frame can interrupt a queued run.
-      this.#activeRuns.set(request.id, controller);
+    const cancellableMethod =
+      request.method === 'verification.run' || request.method === 'project.profile'
+        ? request.method
+        : undefined;
+    const controller = cancellableMethod === undefined ? undefined : new AbortController();
+    if (cancellableMethod !== undefined && controller !== undefined) {
+      // Registration is synchronous so a following control frame can cancel queued work.
+      this.#cancellableOperations.set(request.id, {
+        method: cancellableMethod,
+        controller,
+      });
     }
 
     const operation = this.#serial
@@ -90,8 +108,11 @@ class ProtocolSession {
       })
       .finally(() => {
         this.#activeRequestIds.delete(request.id);
-        if (controller !== undefined && this.#activeRuns.get(request.id) === controller) {
-          this.#activeRuns.delete(request.id);
+        if (
+          controller !== undefined &&
+          this.#cancellableOperations.get(request.id)?.controller === controller
+        ) {
+          this.#cancellableOperations.delete(request.id);
         }
       });
 
@@ -111,10 +132,16 @@ class ProtocolSession {
     );
   }
 
-  #cancel(targetRequestId: string): boolean {
-    const controller = this.#activeRuns.get(targetRequestId);
-    if (controller === undefined || controller.signal.aborted) return false;
-    controller.abort();
+  #cancel(targetRequestId: string, expectedMethod?: CancellableProtocolMethod): boolean {
+    const operation = this.#cancellableOperations.get(targetRequestId);
+    if (
+      operation === undefined ||
+      operation.controller.signal.aborted ||
+      (expectedMethod !== undefined && operation.method !== expectedMethod)
+    ) {
+      return false;
+    }
+    operation.controller.abort();
     return true;
   }
 }
@@ -157,6 +184,30 @@ export async function handleProtocolRequest(
             protocolVersion: PROTOCOL_VERSION,
             id: request.id,
             result: protocolResultSchemas['project.discover'].parse(result),
+          }),
+        );
+        return;
+      }
+      case 'project.profile': {
+        const result = await application.profileProject({
+          repository: request.params.repository,
+          signal: context.signal,
+          onProgress: (progress) => {
+            writer.write(
+              encodeEvent({
+                protocolVersion: PROTOCOL_VERSION,
+                id: request.id,
+                event: 'profile.progress',
+                data: progress,
+              }),
+            );
+          },
+        });
+        writer.write(
+          encodeResult('project.profile', {
+            protocolVersion: PROTOCOL_VERSION,
+            id: request.id,
+            result,
           }),
         );
         return;
@@ -204,6 +255,19 @@ export async function handleProtocolRequest(
       case 'verification.cancel': {
         writer.write(
           encodeResult('verification.cancel', {
+            protocolVersion: PROTOCOL_VERSION,
+            id: request.id,
+            result: {
+              accepted:
+                context.cancelTarget?.(request.params.targetRequestId, 'verification.run') ?? false,
+            },
+          }),
+        );
+        return;
+      }
+      case 'operation.cancel': {
+        writer.write(
+          encodeResult('operation.cancel', {
             protocolVersion: PROTOCOL_VERSION,
             id: request.id,
             result: {

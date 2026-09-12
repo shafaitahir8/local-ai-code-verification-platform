@@ -44,7 +44,12 @@ const environment = {
 };
 
 function git(repository, ...args) {
-  execFileSync(gitExe, args, { cwd: repository, stdio: 'pipe', windowsHide: true });
+  return execFileSync(gitExe, args, {
+    cwd: repository,
+    encoding: 'utf8',
+    stdio: 'pipe',
+    windowsHide: true,
+  });
 }
 
 function createRepository(name, exitCode, policy) {
@@ -81,6 +86,52 @@ function createRepository(name, exitCode, policy) {
   return repository;
 }
 
+function createProfileRepository() {
+  const repository = join(smokeRoot, 'repository profile');
+  const commandMarker = join(repository, 'profiling-command-executed.marker');
+  mkdirSync(join(repository, 'tests'), { recursive: true });
+  writeFileSync(
+    join(repository, 'package.json'),
+    `${JSON.stringify(
+      {
+        name: 'smoke-profile',
+        private: true,
+        packageManager: 'pnpm@11.22.0',
+        scripts: { test: 'node should-not-run.mjs', build: 'vite build' },
+        devDependencies: { vite: '7.1.7', vitest: '5.0.0' },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  writeFileSync(join(repository, 'pnpm-lock.yaml'), "lockfileVersion: '9.0'\n");
+  writeFileSync(join(repository, 'vite.config.ts'), 'export default {};\n');
+  writeFileSync(join(repository, 'vitest.config.ts'), 'export default {};\n');
+  writeFileSync(join(repository, 'tests', 'profile.test.ts'), 'throw new Error("not run");\n');
+  writeFileSync(
+    join(repository, 'should-not-run.mjs'),
+    [
+      "import { writeFileSync } from 'node:fs';",
+      "writeFileSync('profiling-command-executed.marker', 'unexpected');",
+      '',
+    ].join('\n'),
+  );
+  git(repository, 'init', '--initial-branch=main', '--quiet');
+  git(repository, 'add', '.');
+  git(
+    repository,
+    '-c',
+    'user.name=Verifier Smoke',
+    '-c',
+    'user.email=verifier@example.invalid',
+    'commit',
+    '--quiet',
+    '-m',
+    'profile fixture',
+  );
+  return { repository, commandMarker };
+}
+
 function run(args, expectedCode, input) {
   const result = spawnSync(engine, args, {
     cwd: launchDir,
@@ -110,6 +161,72 @@ try {
     windowsHide: true,
   });
   if (node.status === 0) throw new Error(`Node.js remains on the smoke PATH: ${node.stdout}`);
+
+  const profileFixture = createProfileRepository();
+  const profile = JSON.parse(run(['understand', profileFixture.repository, '--json'], 0));
+  if (profile.status !== 'completed' || profile.profile?.completeness !== 'complete') {
+    throw new Error('Self-contained engine did not return a complete project profile.');
+  }
+  for (const capability of [
+    'runtime.node',
+    'package-manager.pnpm',
+    'framework.vite',
+    'test-framework.vitest',
+  ]) {
+    if (!profile.profile.capabilities.some(({ id }) => id === capability)) {
+      throw new Error(`Self-contained engine profile omitted ${capability}.`);
+    }
+  }
+  if (existsSync(profileFixture.commandMarker)) {
+    throw new Error('Project profiling executed an observed project command.');
+  }
+  if (existsSync(database) || existsSync(`${database}-wal`) || existsSync(`${database}-shm`)) {
+    throw new Error('Profile-only execution initialized SQLite history storage.');
+  }
+  const profileStatus = git(profileFixture.repository, 'status', '--short');
+  if (profileStatus.length > 0) {
+    throw new Error(`Project profiling changed the repository: ${profileStatus}`);
+  }
+
+  const profileRequestId = 'outside-checkout-profile-cancel';
+  const cancelRequestId = 'outside-checkout-profile-cancel-control';
+  const profileCancellation = run(
+    ['protocol'],
+    0,
+    [
+      JSON.stringify({
+        protocolVersion: 1,
+        id: profileRequestId,
+        method: 'project.profile',
+        params: { repository: profileFixture.repository },
+      }),
+      JSON.stringify({
+        protocolVersion: 1,
+        id: cancelRequestId,
+        method: 'operation.cancel',
+        params: { targetRequestId: profileRequestId },
+      }),
+      '',
+    ].join('\n'),
+  )
+    .trim()
+    .split(/\r?\n/u)
+    .map((line) => JSON.parse(line));
+  const cancelAcknowledgement = profileCancellation.find(
+    (message) => message.id === cancelRequestId && 'result' in message,
+  );
+  const cancelledProfile = profileCancellation.filter(
+    (message) => message.id === profileRequestId && 'result' in message,
+  );
+  if (cancelAcknowledgement?.result?.accepted !== true) {
+    throw new Error('Self-contained engine did not accept correlated profile cancellation.');
+  }
+  if (cancelledProfile.length !== 1 || cancelledProfile[0]?.result?.status !== 'cancelled') {
+    throw new Error('Self-contained engine did not return exactly one cancelled profile result.');
+  }
+  if (existsSync(database)) {
+    throw new Error('Cancelled profile execution initialized SQLite history storage.');
+  }
 
   const repositories = {
     PASS: createRepository('pass', 0, 'block'),
@@ -146,7 +263,7 @@ try {
   }
 
   process.stdout.write(
-    `Windows engine smoke passed for ${engine}: PASS/WARN/BLOCK, history, protocol argv, and no Node.js on PATH.\n`,
+    `Windows engine smoke passed for ${engine}: project profile/cancellation, no profile writes, PASS/WARN/BLOCK, history, protocol argv, and no Node.js on PATH.\n`,
   );
 } finally {
   rmSync(smokeRoot, { recursive: true, force: true });

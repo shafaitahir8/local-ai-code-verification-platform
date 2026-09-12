@@ -85,7 +85,7 @@ impl ProcessRegistry {
 
     fn interrupt(&mut self, request_id: &str) -> InterruptDisposition {
         if let Some(engine) = self.active.get(request_id) {
-            return if engine.cancellable {
+            return if engine.cancellable_request.is_some() {
                 InterruptDisposition::Active(Arc::clone(engine))
             } else {
                 InterruptDisposition::Rejected
@@ -148,7 +148,7 @@ enum InterruptDisposition {
 }
 
 struct ActiveEngine {
-    cancellable: bool,
+    cancellable_request: Option<CancellableRequest>,
     child: Mutex<Option<CommandChild>>,
     cancellation: Mutex<CancellationState>,
     terminal_received: AtomicBool,
@@ -158,12 +158,12 @@ struct ActiveEngine {
 impl ActiveEngine {
     fn new(
         request_id: String,
-        cancellable: bool,
+        cancellable_request: Option<CancellableRequest>,
         child: CommandChild,
         process_tree: ProcessTreeGuard,
     ) -> Self {
         Self {
-            cancellable,
+            cancellable_request,
             child: Mutex::new(Some(child)),
             cancellation: Mutex::new(CancellationState {
                 target_request_id: request_id,
@@ -194,7 +194,7 @@ impl ActiveEngine {
             .request_id
             .as_deref()
             .map(|cancel_request_id| {
-                encode_cancellation_request(cancel_request_id, &cancellation.target_request_id)
+                self.encode_cancellation_request(cancel_request_id, &cancellation.target_request_id)
             })
             .transpose()?;
         let mut payload = String::with_capacity(
@@ -225,7 +225,7 @@ impl ActiveEngine {
     }
 
     fn send_cancellation(&self, cancel_request_id: String) -> Result<bool, String> {
-        if !self.cancellable || self.terminal_received.load(Ordering::Acquire) {
+        if self.cancellable_request.is_none() || self.terminal_received.load(Ordering::Acquire) {
             return Ok(false);
         }
 
@@ -246,7 +246,7 @@ impl ActiveEngine {
         }
 
         let line =
-            encode_cancellation_request(&cancel_request_id, &cancellation.target_request_id)?;
+            self.encode_cancellation_request(&cancel_request_id, &cancellation.target_request_id)?;
         self.child
             .lock()
             .map_err(|_| "Engine stdin state is unavailable.".to_string())?
@@ -258,6 +258,17 @@ impl ActiveEngine {
         cancellation.request_id = Some(cancel_request_id);
         cancellation.sent_at = Some(Instant::now());
         Ok(true)
+    }
+
+    fn encode_cancellation_request(
+        &self,
+        cancel_request_id: &str,
+        target_request_id: &str,
+    ) -> Result<String, String> {
+        let cancellable_request = self.cancellable_request.ok_or_else(|| {
+            "The active engine request does not support cancellation.".to_string()
+        })?;
+        encode_cancellation_request(cancel_request_id, target_request_id, cancellable_request)
     }
 
     fn cancellation_request_id(&self) -> Result<Option<String>, String> {
@@ -315,6 +326,51 @@ struct CancellationState {
     request_started: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CancellableRequest {
+    VerificationRun,
+    ProjectProfile,
+}
+
+impl CancellableRequest {
+    fn from_method(method: &str) -> Option<Self> {
+        match method {
+            "verification.run" => Some(Self::VerificationRun),
+            "project.profile" => Some(Self::ProjectProfile),
+            _ => None,
+        }
+    }
+
+    fn cancel_method(self) -> &'static str {
+        match self {
+            Self::VerificationRun => "verification.cancel",
+            Self::ProjectProfile => "operation.cancel",
+        }
+    }
+
+    fn timeout_error(self, process_id: u32) -> String {
+        match self {
+            Self::VerificationRun => format!(
+                "Verification engine process {process_id} did not persist an interrupted terminal result within the cancellation grace period."
+            ),
+            Self::ProjectProfile => format!(
+                "Verification engine process {process_id} did not return a cancelled project profile result within the cancellation grace period."
+            ),
+        }
+    }
+
+    fn invalid_terminal_error(self) -> &'static str {
+        match self {
+            Self::VerificationRun => {
+                "Engine accepted cancellation but did not return a persisted cancelled run."
+            }
+            Self::ProjectProfile => {
+                "Engine accepted cancellation but did not return a cancelled project profile result."
+            }
+        }
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RequestIdentity {
@@ -341,11 +397,12 @@ struct CancellationParams<'a> {
 fn encode_cancellation_request(
     cancel_request_id: &str,
     target_request_id: &str,
+    cancellable_request: CancellableRequest,
 ) -> Result<String, String> {
     serde_json::to_string(&CancellationRequest {
         protocol_version: PROTOCOL_VERSION,
         id: cancel_request_id,
-        method: "verification.cancel",
+        method: cancellable_request.cancel_method(),
         params: CancellationParams { target_request_id },
     })
     .map_err(|error| format!("Could not encode the cancellation request: {error}"))
@@ -558,17 +615,24 @@ async fn engine_request(
     }
 
     let _request_guard = processes.request_lock.lock().await;
-    let cancellable = identity.method == "verification.run";
+    let cancellable_request = CancellableRequest::from_method(&identity.method);
     {
         let mut registry = processes
             .registry
             .lock()
             .map_err(|_| "Engine process state is unavailable.".to_string())?;
-        registry.begin_request(&identity.id, cancellable)?;
+        registry.begin_request(&identity.id, cancellable_request.is_some())?;
     }
 
-    let result =
-        run_engine_request(&app, &processes, &identity, request_line.trim(), on_event).await;
+    let result = run_engine_request(
+        &app,
+        &processes,
+        &identity,
+        cancellable_request,
+        request_line.trim(),
+        on_event,
+    )
+    .await;
 
     let cleanup = processes
         .registry
@@ -586,6 +650,7 @@ async fn run_engine_request(
     app: &AppHandle,
     processes: &EngineProcesses,
     identity: &RequestIdentity,
+    cancellable_request: Option<CancellableRequest>,
     request_line: &str,
     on_event: Channel<String>,
 ) -> Result<String, String> {
@@ -604,7 +669,7 @@ async fn run_engine_request(
 
     let active = Arc::new(ActiveEngine::new(
         identity.id.clone(),
-        identity.method == "verification.run",
+        cancellable_request,
         child,
         process_tree,
     ));
@@ -639,8 +704,13 @@ async fn run_engine_request(
                     "Verification engine process {process_id} did not exit after its terminal protocol message."
                 ))
             } else {
-                Err(format!(
-                    "Verification engine process {process_id} did not persist an interrupted terminal result within the cancellation grace period."
+                Err(cancellable_request.map_or_else(
+                    || {
+                        format!(
+                            "Verification engine process {process_id} did not return a terminal result."
+                        )
+                    },
+                    |request| request.timeout_error(process_id),
                 ))
             };
         };
@@ -683,7 +753,11 @@ async fn run_engine_request(
             diagnostics.trim()
         )
     })?;
-    stream.validate_cancellation(terminal, active.cancellation_request_id()?.is_some())?;
+    stream.validate_cancellation(
+        terminal,
+        active.cancellation_request_id()?.is_some(),
+        cancellable_request,
+    )?;
     Ok(terminal.to_string())
 }
 
@@ -738,6 +812,7 @@ impl ProtocolStreamState {
         &self,
         terminal: &str,
         cancellation_requested: bool,
+        cancellable_request: Option<CancellableRequest>,
     ) -> Result<(), String> {
         if !cancellation_requested {
             return Ok(());
@@ -749,6 +824,10 @@ impl ProtocolStreamState {
             return Ok(());
         }
 
+        let cancellable_request = cancellable_request.ok_or_else(|| {
+            "Engine acknowledged cancellation for a request that is not cancellable.".to_string()
+        })?;
+
         let message: Value = serde_json::from_str(terminal).map_err(|error| {
             format!("Could not validate the cancelled terminal result: {error}")
         })?;
@@ -759,10 +838,7 @@ impl ProtocolStreamState {
             .and_then(Value::as_str)
             != Some("cancelled")
         {
-            return Err(
-                "Engine accepted cancellation but did not return a persisted cancelled run."
-                    .to_string(),
-            );
+            return Err(cancellable_request.invalid_terminal_error().to_string());
         }
         Ok(())
     }
@@ -1062,13 +1138,31 @@ mod tests {
     }
 
     #[test]
-    fn cancellation_request_uses_a_distinct_correlated_protocol_v1_frame() {
-        let encoded = encode_cancellation_request("cancel-7", "run-1").unwrap();
-        let value: Value = serde_json::from_str(&encoded).unwrap();
-        assert_eq!(value["protocolVersion"], 1);
-        assert_eq!(value["id"], "cancel-7");
-        assert_eq!(value["method"], "verification.cancel");
-        assert_eq!(value["params"]["targetRequestId"], "run-1");
+    fn cancellation_requests_use_the_method_specific_correlated_protocol_v1_frame() {
+        for (target, expected_method) in [
+            (CancellableRequest::VerificationRun, "verification.cancel"),
+            (CancellableRequest::ProjectProfile, "operation.cancel"),
+        ] {
+            let encoded = encode_cancellation_request("cancel-7", "request-1", target).unwrap();
+            let value: Value = serde_json::from_str(&encoded).unwrap();
+            assert_eq!(value["protocolVersion"], 1);
+            assert_eq!(value["id"], "cancel-7");
+            assert_eq!(value["method"], expected_method);
+            assert_eq!(value["params"]["targetRequestId"], "request-1");
+        }
+    }
+
+    #[test]
+    fn only_verification_runs_and_project_profiles_are_cancellable() {
+        assert_eq!(
+            CancellableRequest::from_method("verification.run"),
+            Some(CancellableRequest::VerificationRun)
+        );
+        assert_eq!(
+            CancellableRequest::from_method("project.profile"),
+            Some(CancellableRequest::ProjectProfile)
+        );
+        assert_eq!(CancellableRequest::from_method("project.discover"), None);
     }
 
     #[test]
@@ -1137,7 +1231,7 @@ mod tests {
     }
 
     #[test]
-    fn accepted_cancellation_requires_a_cancelled_terminal_result() {
+    fn accepted_verification_cancellation_requires_a_persisted_cancelled_run() {
         let accepted = ProtocolStreamState {
             cancellation_acknowledged: Some(true),
             ..ProtocolStreamState::default()
@@ -1145,7 +1239,8 @@ mod tests {
         assert!(accepted
             .validate_cancellation(
                 r#"{"protocolVersion":1,"id":"run-1","result":{"status":"completed"}}"#,
-                true
+                true,
+                Some(CancellableRequest::VerificationRun),
             )
             .unwrap_err()
             .contains("did not return a persisted cancelled run"));
@@ -1153,6 +1248,7 @@ mod tests {
             .validate_cancellation(
                 r#"{"protocolVersion":1,"id":"run-1","result":{"status":"cancelled"}}"#,
                 true,
+                Some(CancellableRequest::VerificationRun),
             )
             .unwrap();
 
@@ -1164,15 +1260,40 @@ mod tests {
             .validate_cancellation(
                 r#"{"protocolVersion":1,"id":"run-1","result":{"status":"completed"}}"#,
                 true,
+                Some(CancellableRequest::VerificationRun),
             )
             .unwrap();
         assert!(ProtocolStreamState::default()
             .validate_cancellation(
                 r#"{"protocolVersion":1,"id":"run-1","result":{"status":"cancelled"}}"#,
-                true
+                true,
+                Some(CancellableRequest::VerificationRun),
             )
             .unwrap_err()
             .contains("without acknowledging"));
+    }
+
+    #[test]
+    fn accepted_profile_cancellation_requires_the_nonpersisted_cancelled_result() {
+        let accepted = ProtocolStreamState {
+            cancellation_acknowledged: Some(true),
+            ..ProtocolStreamState::default()
+        };
+        assert!(accepted
+            .validate_cancellation(
+                r#"{"protocolVersion":1,"id":"profile-1","result":{"status":"completed","profile":{}}}"#,
+                true,
+                Some(CancellableRequest::ProjectProfile),
+            )
+            .unwrap_err()
+            .contains("did not return a cancelled project profile result"));
+        accepted
+            .validate_cancellation(
+                r#"{"protocolVersion":1,"id":"profile-1","result":{"status":"cancelled"}}"#,
+                true,
+                Some(CancellableRequest::ProjectProfile),
+            )
+            .unwrap();
     }
 
     #[cfg(debug_assertions)]

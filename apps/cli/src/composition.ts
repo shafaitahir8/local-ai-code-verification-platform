@@ -6,12 +6,17 @@ import {
   previewProjectConfig,
   projectConfigExists,
 } from '@verify/config';
-import { VerifierApplication } from '@verify/core';
+import {
+  VerifierApplication,
+  type ProjectProfilerPort,
+  type RunRepositoryPort,
+} from '@verify/core';
 import { GenericCommandAdapter } from '@verify/adapter-generic-command';
+import { createProjectProfiler } from '@verify/project-intelligence';
 import { GitRepositoryService } from '@verify/repository';
 import { createSqliteRunRepository } from '@verify/storage';
 import { VerificationRunner } from '@verify/verification';
-import type { SqliteNativeBinding } from '@verify/storage';
+import type { SqliteNativeBinding, SqliteRunRepository } from '@verify/storage';
 
 export interface ApplicationComposition {
   readonly application: VerifierApplication;
@@ -21,13 +26,44 @@ export interface ApplicationComposition {
 export interface ApplicationCompositionOptions {
   /** Preloaded better-sqlite3 addon supplied by the self-contained executable bootstrap. */
   readonly sqliteNativeBinding?: SqliteNativeBinding;
+  /** Deterministic project profiler override used by contract tests. */
+  readonly profiler?: ProjectProfilerPort;
+}
+
+class LazyRunRepository implements RunRepositoryPort {
+  #repository: SqliteRunRepository | undefined;
+
+  public constructor(private readonly createRepository: () => SqliteRunRepository) {}
+
+  public saveRun(...args: Parameters<RunRepositoryPort['saveRun']>) {
+    return this.#get().saveRun(...args);
+  }
+
+  public getLatestRun(...args: Parameters<RunRepositoryPort['getLatestRun']>) {
+    return this.#get().getLatestRun(...args);
+  }
+
+  public listRuns(...args: Parameters<RunRepositoryPort['listRuns']>) {
+    return this.#get().listRuns(...args);
+  }
+
+  public close(): void {
+    this.#repository?.close();
+  }
+
+  #get(): SqliteRunRepository {
+    this.#repository ??= this.createRepository();
+    return this.#repository;
+  }
 }
 
 export function createApplicationComposition(
   options: ApplicationCompositionOptions = {},
 ): ApplicationComposition {
   const git = new GitRepositoryService();
-  const runRepository = createSqliteRunRepository({ nativeBinding: options.sqliteNativeBinding });
+  const runRepository = new LazyRunRepository(() =>
+    createSqliteRunRepository({ nativeBinding: options.sqliteNativeBinding }),
+  );
   const verification = new VerificationRunner(new GenericCommandAdapter());
 
   const application = new VerifierApplication({
@@ -43,6 +79,7 @@ export function createApplicationComposition(
       resolveRoot: (startPath) => git.discoverRoot(startPath),
       inspect: (startPath) => git.inspect(startPath),
     },
+    profiler: options.profiler ?? createProjectProfiler(),
     verification,
     runs: runRepository,
   });

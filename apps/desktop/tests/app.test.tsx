@@ -49,6 +49,164 @@ describe('desktop dashboard', () => {
     expect(screen.getByRole('region', { name: 'Recent runs' })).toBeInTheDocument();
   });
 
+  it('automatically renders deterministic project facts, candidates, and evidence', async () => {
+    const user = userEvent.setup();
+    render(
+      <App
+        client={createMockEngineClient({ latencyMs: 5 })}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\profile-project"
+      />,
+    );
+
+    expect(await screen.findByText('Profile ready')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Deterministic facts' })).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Detected project capabilities' })).toHaveTextContent(
+      'Node.js',
+    );
+    expect(screen.getAllByText('Vite')).toHaveLength(2);
+    expect(screen.getAllByText('confirmed').length).toBeGreaterThan(0);
+    expect(
+      screen.getByRole('heading', { name: 'Observed command candidates' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('vitest run')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Evidence only - these commands were not run and cannot be started from this view.',
+      ),
+    ).toBeInTheDocument();
+    const evidence = screen.getByText(/^Deterministic evidence \(/u);
+    await user.click(evidence);
+    expect(screen.getByText('A Vite configuration file is present.')).toBeInTheDocument();
+    expect(screen.queryByText(/\bAI\b/u)).not.toBeInTheDocument();
+  });
+  it('keeps conflicting evidence explicit instead of selecting a hidden winner', async () => {
+    render(
+      <App
+        client={createMockEngineClient({ latencyMs: 0, profileAmbiguous: true })}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\ambiguous-profile"
+      />,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Ambiguities' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Both pnpm and npm package-manager evidence is present.'),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps the existing dashboard usable when project profiling fails', async () => {
+    render(
+      <App
+        client={createMockEngineClient({ latencyMs: 0, failMethod: 'project.profile' })}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\profile-error"
+      />,
+    );
+
+    expect(await screen.findByText('Scan unavailable')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'profile-error' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Configured checks' })).toBeInTheDocument();
+    expect(
+      screen.getByText(/MOCK_ERROR: Mock failure while calling project\.profile\./u),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('distinguishes a budget-limited partial profile from cancellation', async () => {
+    render(
+      <App
+        client={createMockEngineClient({ latencyMs: 0, profileCompleteness: 'partial' })}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\partial-profile"
+      />,
+    );
+
+    expect(await screen.findByText('Partial profile')).toBeInTheDocument();
+    expect(screen.getByText(/A scan budget was reached/u)).toBeInTheDocument();
+    expect(
+      screen.getByText('The entry limit was reached; this profile has partial coverage.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Scan stopped')).not.toBeInTheDocument();
+  });
+
+  it('stops an active scan and retains the last completed profile on refresh', async () => {
+    const user = userEvent.setup();
+    render(
+      <App
+        client={createMockEngineClient({ latencyMs: 0, profileLatencyMs: 100 })}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\refresh-profile"
+      />,
+    );
+
+    await screen.findByText('Profile ready');
+    await user.click(screen.getByRole('button', { name: 'Understand Project' }));
+    expect(await screen.findByText('Scanning')).toBeInTheDocument();
+    expect(
+      screen.getByRole('progressbar', { name: 'Project sensors completed' }),
+    ).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Stop project scan' }));
+
+    expect(await screen.findByText('Scan stopped')).toBeInTheDocument();
+    expect(
+      screen.getByText('Refresh cancelled; the last completed profile remains displayed.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Deterministic facts' })).toBeInTheDocument();
+    expect(screen.getByText('vitest run')).toBeInTheDocument();
+  });
+
+  it('does not report cancellation when interruption lacks a terminal result', async () => {
+    const user = userEvent.setup();
+    render(
+      <App
+        client={createMockEngineClient({
+          latencyMs: 0,
+          profileLatencyMs: 100,
+          rejectProfileCancellation: true,
+        })}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\unconfirmed-profile-stop"
+      />,
+    );
+
+    await screen.findByText('Profile ready');
+    await user.click(screen.getByRole('button', { name: 'Understand Project' }));
+    await user.click(await screen.findByRole('button', { name: 'Stop project scan' }));
+
+    expect(await screen.findByText('Scan unavailable')).toBeInTheDocument();
+    expect(
+      screen.getByText('Refresh failed; the last completed profile remains displayed.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/INTERRUPTED: The mock engine request was interrupted\./u),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Scan stopped')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Deterministic facts' })).toBeInTheDocument();
+  });
+
+  it('ignores profile events and results from a repository that has been replaced', async () => {
+    const user = userEvent.setup();
+    render(
+      <App
+        client={createMockEngineClient({ latencyMs: 30 })}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\old-profile"
+      />,
+    );
+
+    await screen.findByRole('button', { name: 'Stop project scan' });
+    const path = screen.getByRole('textbox', { name: 'Repository path' });
+    await user.clear(path);
+    await user.type(path, 'C:\\work\\new-profile');
+    await user.click(screen.getByRole('button', { name: 'Inspect again' }));
+
+    expect(await screen.findByRole('heading', { name: 'new-profile' })).toBeInTheDocument();
+    expect(await screen.findByText('Profile ready')).toBeInTheDocument();
+    expect(screen.getByText('C:\\work\\new-profile')).toBeInTheDocument();
+    expect(screen.queryByText('C:\\work\\old-profile')).not.toBeInTheDocument();
+  });
+
   it('initializes a discovered configuration before enabling verification', async () => {
     const user = userEvent.setup();
     render(
@@ -98,7 +256,10 @@ describe('desktop dashboard', () => {
     const user = userEvent.setup();
     render(
       <App
-        client={createMockEngineClient({ latencyMs: 250 })}
+        client={createMockEngineClient({
+          latencyMs: 250,
+          verificationCancellationLatencyMs: 250,
+        })}
         pickRepository={async () => null}
         initialRepository="C:\\work\\running-project"
       />,
@@ -197,6 +358,26 @@ describe('desktop dashboard', () => {
     const { container } = render(
       <App client={createMockEngineClient({ latencyMs: 0 })} pickRepository={async () => null} />,
     );
+    const result = await axe.run(container, {
+      rules: {
+        // JSDOM cannot calculate rendered foreground/background contrast.
+        'color-contrast': { enabled: false },
+      },
+    });
+
+    expect(result.violations).toEqual([]);
+  });
+
+  it('has no automatically detectable accessibility violations in the project profile view', async () => {
+    const { container } = render(
+      <App
+        client={createMockEngineClient({ latencyMs: 0 })}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\accessible-profile"
+      />,
+    );
+    await screen.findByText('Profile ready');
+
     const result = await axe.run(container, {
       rules: {
         // JSDOM cannot calculate rendered foreground/background contrast.

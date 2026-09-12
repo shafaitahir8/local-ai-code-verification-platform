@@ -18,6 +18,21 @@ The Iterations 0-4 target provides:
 
 The MVP does not include AI, model downloads, risk scoring, dependency/blast-radius analysis, generated tests, MCP, native framework adapters, cloud accounts, authentication, telemetry, or an unrestricted shell.
 
+## Iteration 5 status
+
+Iteration 5 is in progress. Its first vertical slice adds bounded, deterministic understanding for a
+single-root Node/Vite/Vitest repository. Opening a repository builds the same versioned
+`ProjectProfile` through the core, protocol, CLI, native bridge, and desktop. The profile reports
+detected tooling, scripts, test locations, confidence, ambiguities, warnings, and the file evidence
+behind each conclusion.
+
+Profiling is read-only: it does not run a discovered script, write repository or configuration
+files, or initialize the SQLite run-history database. Observed scripts are unapproved task
+candidates, not executable policy. A scan that reaches a configured budget returns an explicit
+partial profile, while a stopped scan returns a distinct cancelled result. Broader ecosystem
+detection, automatic planning, configuration schema version 2, and AI are not implemented by this
+slice.
+
 ## Architecture
 
     CLI --------+
@@ -65,6 +80,7 @@ The first-class commands are:
 
     verify init
     verify discover
+    verify understand
     verify inspect
     verify run
     verify run --json
@@ -75,6 +91,7 @@ From the workspace during development, use the root wrapper and pass the target 
 
     pnpm verify init C:\path\to\repository
     pnpm verify discover C:\path\to\repository
+    pnpm verify understand C:\path\to\repository
     pnpm verify inspect C:\path\to\repository
     pnpm verify run C:\path\to\repository
     pnpm verify history C:\path\to\repository
@@ -83,6 +100,9 @@ The equivalent package command is **pnpm --filter @verify/cli dev COMMAND**. Aft
 
 - **verify init** detects the repository and suggests suites only from commands it can prove exist. It creates **.verify/project.yml**; use **--force** to explicitly replace an existing file.
 - **verify discover** reports project markers and safe suite suggestions without writing configuration.
+- **verify understand** runs the bounded deterministic scan and reports the project profile without
+  executing discovered commands or writing repository, configuration, or history state. Use
+  **--json** for the protocol-equivalent typed result; interrupting the scan exits with code 3.
 - **verify inspect** reports root, branch, changed files, staged/unstaged state, additions, deletions, and status.
 - **verify run** validates configuration, shows and executes configured commands, streams progress, stores the normalized run, and evaluates the gate.
 - **verify run --json** writes stable machine-readable output without human progress text on stdout.
@@ -143,7 +163,11 @@ Operational errors remain separate from gate success. The interface always commu
 
 ## Desktop
 
-The Tauri dashboard supports selecting a repository, reviewing detected project information and Git changes, initializing configuration, reviewing checks, running verification with live progress, viewing the final gate, and reading recent local history.
+The Tauri dashboard supports selecting a repository, reviewing detected project information and Git
+changes, initializing configuration, reviewing checks, running verification with live progress,
+viewing the final gate, and reading recent local history. Opening a repository also starts the
+bounded deterministic profile scan. **Understand Project** refreshes it, **Stop project scan**
+cancels only that correlated operation, and expandable evidence explains each detection.
 
 Run the browser UI with **pnpm --filter @verify/desktop dev**. With Rust and the platform-specific Tauri prerequisites installed, run the native application with **pnpm --filter @verify/desktop tauri dev** and build it with **pnpm --filter @verify/desktop desktop:build**.
 

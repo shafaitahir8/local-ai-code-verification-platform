@@ -42,4 +42,27 @@ describe('TauriEngineTransport cancellation', () => {
     expect(invoke).toHaveBeenCalledWith('engine_interrupt', { requestId: 'run-1' });
     expect(chunks).toEqual([terminal]);
   });
+
+  it('reports an interrupted request whose terminal result was not confirmed', async () => {
+    const requestLine = encodeRequest({
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'profile-1',
+      method: 'project.profile',
+      params: { repository: 'C:\\work\\repository' },
+    });
+    invoke.mockRejectedValueOnce(new Error('sidecar stopped')).mockResolvedValueOnce(true);
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      new TauriEngineTransport().request(requestLine, () => undefined, controller.signal),
+    ).rejects.toEqual(
+      expect.objectContaining({
+        code: 'INTERRUPTED',
+        message: 'The engine interruption did not return a confirmed terminal result.',
+      }),
+    );
+
+    expect(invoke).toHaveBeenCalledWith('engine_interrupt', { requestId: 'profile-1' });
+  });
 });
