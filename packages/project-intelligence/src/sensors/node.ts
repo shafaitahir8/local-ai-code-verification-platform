@@ -14,7 +14,12 @@ import type { ProjectSensor, ProjectSensorContext, ProjectSensorResult } from '.
 import { compareText } from '../ordering.js';
 
 const SENSOR_ID = 'node';
-const CONFIG_PATTERN = /^(?:vite|vitest)\.config\.(?:[cm]?[jt]s)$/u;
+const VITE_CONFIG_PATTERN = /^(?:vite|vitest)\.config\.(?:[cm]?[jt]s)$/u;
+const JEST_CONFIG_PATTERN = /^jest\.config\.(?:[cm]?[jt]s|json)$/u;
+const DIRECT_JEST_SCRIPT_PATTERN =
+  /^(?:(?:npx|npm exec|pnpm exec|yarn exec)\s+(?:--\s+)?)?jest(?:\s|$)/u;
+const DIRECT_VITE_SCRIPT_PATTERN =
+  /^(?:(?:npx|npm exec|pnpm exec|yarn exec)\s+(?:--\s+)?)?vite(?:\s|$)/u;
 const TEST_PATH_PATTERN =
   /(?:^|\/)(?:__tests__|tests?|spec)(?:\/|$)|\.(?:test|spec)\.[cm]?[jt]sx?$/u;
 
@@ -159,20 +164,29 @@ export class NodeProjectSensor implements ProjectSensor {
 
     throwIfProjectProfileCancelled(context.signal);
     const configPaths = [...context.inventory.files.keys()]
-      .filter((path) => !path.includes('/') && CONFIG_PATTERN.test(path))
+      .filter(
+        (path) =>
+          !path.includes('/') && (VITE_CONFIG_PATTERN.test(path) || JEST_CONFIG_PATTERN.test(path)),
+      )
       .sort(compareText);
     const viteEvidence: ProjectEvidence[] = [];
     const vitestEvidence: ProjectEvidence[] = [];
+    const jestEvidence: ProjectEvidence[] = [];
     for (const path of configPaths) {
-      const tool = path.startsWith('vitest.') ? 'vitest' : 'vite';
+      let tool: 'vite' | 'vitest' | 'jest' = 'vite';
+      if (path.startsWith('vitest.')) tool = 'vitest';
+      else if (path.startsWith('jest.')) tool = 'jest';
+      const toolName = { jest: 'Jest', vite: 'Vite', vitest: 'Vitest' }[tool];
       const item = addEvidence({
         id: `node.config.${tool}.${stableSuffix(path)}`,
         sensorId: SENSOR_ID,
         kind: 'config',
         path,
-        summary: `${tool === 'vite' ? 'Vite' : 'Vitest'} configuration is present.`,
+        summary: `${toolName} configuration is present.`,
       });
-      (tool === 'vite' ? viteEvidence : vitestEvidence).push(item);
+      if (tool === 'vite') viteEvidence.push(item);
+      else if (tool === 'vitest') vitestEvidence.push(item);
+      else jestEvidence.push(item);
     }
 
     const managerEvidence = new Map<'npm' | 'pnpm' | 'yarn', ProjectEvidence[]>();
@@ -260,6 +274,7 @@ export class NodeProjectSensor implements ProjectSensor {
 
       viteEvidence.push(...dependencyEvidence('vite'));
       vitestEvidence.push(...dependencyEvidence('vitest'));
+      jestEvidence.push(...dependencyEvidence('jest'));
       typescriptEvidence.push(...dependencyEvidence('typescript'));
       eslintEvidence.push(...dependencyEvidence('eslint'));
 
@@ -286,6 +301,10 @@ export class NodeProjectSensor implements ProjectSensor {
           confidence: 'confirmed',
           evidenceIds: [item.id],
         });
+        if (kind === 'test' && DIRECT_JEST_SCRIPT_PATTERN.test(command.trim())) {
+          jestEvidence.push(item);
+        }
+        if (DIRECT_VITE_SCRIPT_PATTERN.test(command.trim())) viteEvidence.push(item);
       }
     }
 
@@ -321,6 +340,34 @@ export class NodeProjectSensor implements ProjectSensor {
         }),
       );
 
+    if (context.inventory.files.has('index.html')) {
+      // The root entry document is explicit machine-readable evidence, represented by the existing
+      // manifest kind so a static preview can be confirmed without widening the profile contract.
+      if (viteEvidence.length > 0) {
+        viteEvidence.push(
+          addEvidence({
+            id: 'node.manifest.vite-root-index-html',
+            sensorId: SENSOR_ID,
+            kind: 'manifest',
+            path: 'index.html',
+            summary: 'Root index.html is present as the Vite entry document.',
+          }),
+        );
+      } else if (
+        context.inventory.traversalComplete &&
+        (!context.inventory.files.has('package.json') || manifest !== null)
+      ) {
+        const rootIndexEvidence = addEvidence({
+          id: 'node.manifest.static-root-index-html',
+          sensorId: SENSOR_ID,
+          kind: 'manifest',
+          path: 'index.html',
+          summary: 'Root index.html is present as a static-site entry document.',
+        });
+        addCapability('preview.static-html', 'preview', 'Static HTML', [rootIndexEvidence]);
+      }
+    }
+
     if (viteEvidence.length > 0) {
       addCapability('framework.vite', 'framework', 'Vite', viteEvidence);
       addCapability('build-tool.vite', 'build-tool', 'Vite', viteEvidence);
@@ -328,6 +375,12 @@ export class NodeProjectSensor implements ProjectSensor {
     if (vitestEvidence.length > 0) {
       addCapability('test-framework.vitest', 'test-framework', 'Vitest', [
         ...vitestEvidence,
+        ...testPathEvidence,
+      ]);
+    }
+    if (jestEvidence.length > 0) {
+      addCapability('test-framework.jest', 'test-framework', 'Jest', [
+        ...jestEvidence,
         ...testPathEvidence,
       ]);
     }

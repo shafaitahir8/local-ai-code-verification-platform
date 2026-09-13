@@ -25,6 +25,7 @@ export interface ProjectInventoryEntry {
 export interface ProjectInventory {
   readonly entries: readonly ProjectInventoryEntry[];
   readonly files: ReadonlyMap<string, ProjectInventoryEntry>;
+  readonly traversalComplete: boolean;
 }
 
 export interface ProjectMetadataText {

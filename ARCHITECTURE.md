@@ -49,8 +49,8 @@ The canonical product reset and delivery sequence are documented in
 **docs/planning/REVISED-PRODUCT-PATH-POST-V0.1.0.md** and
 **docs/tasks/IMPLEMENTATION-PLAN-POST-V0.1.0.md**. ADR-009 through ADR-014 govern the new authority,
 sensor, configuration, cancellation, provider, and launch boundaries. These are roadmap decisions.
-The package table and primary flows below describe the v0.1.0 system plus the implemented first
-Iteration 5 vertical slice; later roadmap behavior remains prospective.
+The package table and primary flows below describe the v0.1.0 system plus the implemented Iteration
+5 slices 5A and 5B; later roadmap behavior remains prospective.
 
 Iteration 5 adds portable profile types to **@verify/domain**, a `ProjectProfilerPort` to
 **@verify/core**, and one documented project-intelligence implementation containing the bounded
@@ -79,21 +79,21 @@ There is one implementation of repository inspection, configuration, verificatio
 
 ## Package ownership
 
-| Package                             | Owns                                                                                             | Must not own                                                   |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
-| **@verify/domain**                  | Infrastructure-independent entities, result types, findings, artifacts, gate types               | Git commands, YAML, SQLite, subprocesses, React, Tauri         |
-| **@verify/core**                    | Initialize, discover, inspect, run, gate, and history use cases; application ports               | Concrete drivers or interface rendering                        |
-| **@verify/config**                  | **.verify/project.yml**, schema v1, validation, safe writes, and project-marker/script discovery | Command execution or gate decisions                            |
-| **@verify/project-intelligence**    | Bounded read-only inventory, sensor coordination, and Node/Vite/Vitest profile detection         | Project command execution, policy mutation, persistence, or AI |
-| **@verify/repository**              | Git root discovery, branch/status/diff parsing, and changed-file normalization                   | Project-marker discovery, verification scheduling, or UI state |
-| **@verify/verification**            | Run lifecycle, check scheduling, timeout/cancellation contracts, normalized events               | Shell-specific execution details or policy                     |
-| **@verify/adapter-generic-command** | Local execution of explicitly configured commands                                                | Config invention, gate decisions, remote shells                |
-| **@verify/policy**                  | Deterministic PASS/WARN/BLOCK evaluation from normalized results                                 | Process or tool implementation details                         |
-| **@verify/storage**                 | RunRepository implementation, SQLite/Drizzle schema and ordered migrations                       | Source-controlled project policy                               |
-| **@verify/protocol**                | Version 1 request, event, result, and error envelopes                                            | Business logic or arbitrary console parsing                    |
-| **@verify/ui**                      | Reusable accessible presentation primitives                                                      | Repository or verification behavior                            |
-| **apps/cli**                        | CLI parsing, composition, human and stable JSON output, protocol server                          | Duplicate use cases                                            |
-| **apps/desktop**                    | Tauri process bridge and React dashboard                                                         | Gate calculation, Git parsing, command execution, persistence  |
+| Package                             | Owns                                                                                              | Must not own                                                   |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| **@verify/domain**                  | Infrastructure-independent entities, result types, findings, artifacts, gate types                | Git commands, YAML, SQLite, subprocesses, React, Tauri         |
+| **@verify/core**                    | Initialize, discover, inspect, run, gate, and history use cases; application ports                | Concrete drivers or interface rendering                        |
+| **@verify/config**                  | **.verify/project.yml**, schema v1, validation, safe writes, and project-marker/script discovery  | Command execution or gate decisions                            |
+| **@verify/project-intelligence**    | Bounded read-only inventory, sensor coordination, and Node/Vite/Vitest/Jest/static-site detection | Project command execution, policy mutation, persistence, or AI |
+| **@verify/repository**              | Git root discovery, branch/status/diff parsing, and changed-file normalization                    | Project-marker discovery, verification scheduling, or UI state |
+| **@verify/verification**            | Run lifecycle, check scheduling, timeout/cancellation contracts, normalized events                | Shell-specific execution details or policy                     |
+| **@verify/adapter-generic-command** | Local execution of explicitly configured commands                                                 | Config invention, gate decisions, remote shells                |
+| **@verify/policy**                  | Deterministic PASS/WARN/BLOCK evaluation from normalized results                                  | Process or tool implementation details                         |
+| **@verify/storage**                 | RunRepository implementation, SQLite/Drizzle schema and ordered migrations                        | Source-controlled project policy                               |
+| **@verify/protocol**                | Version 1 request, event, result, and error envelopes                                             | Business logic or arbitrary console parsing                    |
+| **@verify/ui**                      | Reusable accessible presentation primitives                                                       | Repository or verification behavior                            |
+| **apps/cli**                        | CLI parsing, composition, human and stable JSON output, protocol server                           | Duplicate use cases                                            |
+| **apps/desktop**                    | Tauri process bridge and React dashboard                                                          | Gate calculation, Git parsing, command execution, persistence  |
 
 Package names may be split further only when a concrete implementation needs a separately testable adapter. Empty roadmap packages are not created.
 
@@ -124,7 +124,7 @@ Any dependency that reverses these directions requires architecture review and a
 2. The Git adapter discovers root and branch and parses staged, unstaged, untracked, and diff-stat evidence.
 3. Core returns stable domain data; the interface only renders or serializes it.
 
-### Understand project (Iteration 5 first slice)
+### Understand project (Iteration 5 slices 5A and 5B)
 
 1. A caller selects a Git repository; core resolves its canonical repository root.
 2. The project-intelligence coordinator creates a bounded, deterministic file inventory and invokes
@@ -136,9 +136,14 @@ Any dependency that reverses these directions requires architecture review and a
 5. CLI, protocol, native bridge, and desktop expose that same result. Profile-only composition does
    not construct SQLite storage, persist a record, or write repository/configuration state.
 
-This implemented slice supports only a single-root Node/Vite/Vitest repository. It does not create
-verification plans, approve discovered scripts, migrate configuration, or invoke AI. Existing
-configuration discovery remains a separate schema-v1 compatibility path.
+The implemented scope supports single-root Node projects using Vite, Vitest, or Jest, plus a plain
+static site when a complete inventory finds a root `index.html` and no Vite evidence. A
+plain static site receives only a detection capability; profiling does not create or run a preview
+command or server. When Vite evidence and `index.html` coexist, the entry document strengthens the
+Vite finding and does not misclassify the project as a plain static site. These additions reuse the
+same profile and interface contracts. They do not create verification plans, approve or execute
+discovered scripts, migrate configuration, write repository/configuration/database state, or invoke
+AI. Existing configuration discovery remains a separate schema-v1 compatibility path.
 
 ### Run verification
 
@@ -221,8 +226,8 @@ No future feature may make deterministic verification depend on AI availability.
 
 ## Test architecture
 
-- Unit tests cover parsing, validation, transformations, bounded project profiling, discovery, Git
-  parsing, policy, and exit-code mapping.
+- Unit tests cover parsing, validation, transformations, bounded Node/Vite/Vitest/Jest/static-site
+  profiling, Vite-versus-static precedence, discovery, Git parsing, policy, and exit-code mapping.
 - Adapter contract tests cover success, failure, missing executable, timeout, cancellation, output streams, working directory, and exit-code normalization.
 - Real fixture repositories cover pass, failing test, failing build, and Git-change workflows.
 - CLI integration tests exercise init, inspect, run, and gate.

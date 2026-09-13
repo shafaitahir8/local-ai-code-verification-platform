@@ -43,6 +43,29 @@ describe('bounded profiling and cancellation', () => {
     });
   });
 
+  it('does not confirm an absence-based static classification from a truncated inventory', async () => {
+    const repositoryRoot = await temporaryDirectory();
+    await Promise.all([
+      writeFile(join(repositoryRoot, 'index.html'), '<!doctype html>\n', 'utf8'),
+      writeFile(
+        join(repositoryRoot, 'package.json'),
+        JSON.stringify({ devDependencies: { vite: '7.1.7' } }),
+        'utf8',
+      ),
+      writeFile(join(repositoryRoot, 'vite.config.ts'), 'export default {};\n', 'utf8'),
+    ]);
+
+    const result = await new FileSystemProjectProfiler({ limits: { maxEntries: 1 } }).profile({
+      repositoryRoot,
+    });
+
+    expect(result.status).toBe('completed');
+    if (result.status !== 'completed') throw new Error('Expected a completed profile.');
+    expect(result.profile.completeness).toBe('partial');
+    expect(result.profile.scan.limitsReached).toContain('entries');
+    expect(result.profile.capabilities.map(({ id }) => id)).not.toContain('preview.static-html');
+  });
+
   it('returns a partial completed profile when a metadata file exceeds its read budget', async () => {
     const repositoryRoot = await temporaryDirectory();
     await writeFile(join(repositoryRoot, 'package.json'), '{"name":"larger-than-limit"}', 'utf8');

@@ -115,6 +115,10 @@ compares the GUI protocol client with CLI JSON output from the same headless eng
 sidecar, installer, outside-checkout workflow, Node-independence, persistence, and process-cleanup
 results must be recorded separately because browser tests cannot prove them.
 
-The implemented Iteration 5 surface is limited to the first single-root Node/Vite/Vitest profile
-slice. Iteration 5 as a whole is not complete; broader ecosystems, AI, planning, schema-v2 behavior,
-and smart command execution are intentionally absent.
+The implemented Iteration 5 surface covers single-root Node projects using Vite, Vitest, or Jest,
+plus detection of a plain static site when a complete inventory finds a root `index.html` without
+Vite evidence. A Vite project with `index.html` remains Vite, while a plain static site exposes only
+a preview capability: the desktop does not start a preview server or execute a command. The same
+existing profile contract and rendering path carry these findings, and profiling writes no
+repository, configuration, or database state. Iteration 5 as a whole is not complete; broader
+ecosystems, AI, planning, schema-v2 behavior, and smart command execution are intentionally absent.

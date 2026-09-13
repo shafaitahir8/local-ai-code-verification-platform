@@ -1,0 +1,11 @@
+{
+  "name": "jest-profile-fixture",
+  "private": true,
+  "packageManager": "npm@11.6.0",
+  "scripts": {
+    "test": "jest --runInBand"
+  },
+  "devDependencies": {
+    "jest": "30.1.3"
+  }
+}

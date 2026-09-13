@@ -174,20 +174,28 @@ describe('desktop/core equivalence', () => {
     expect(deterministicOutcome(guiRun)).toStrictEqual(deterministicOutcome(cliRun));
   }, 20_000);
 
-  it('returns the same read-only project profile through GUI protocol and CLI JSON paths', async () => {
-    const { repository, database } = await createFixture('project-intelligence/node-vite-vitest');
-    const client = new ProtocolEngineClient(protocolTransport(database), {
-      createRequestId: () => 'desktop-profile-equivalence',
-    });
+  it.each([
+    ['Node/Vite/Vitest', 'project-intelligence/node-vite-vitest'],
+    ['Node/Jest', 'project-intelligence/node-jest'],
+    ['plain static site', 'project-intelligence/plain-static'],
+  ])(
+    'returns the same read-only %s project profile through GUI protocol and CLI JSON paths',
+    async (_profileKind, fixture) => {
+      const { repository, database } = await createFixture(fixture);
+      const client = new ProtocolEngineClient(protocolTransport(database), {
+        createRequestId: () => 'desktop-profile-equivalence',
+      });
 
-    const guiResult = await client.request('project.profile', { repository });
-    const cliResult = await spawnCli(['understand', repository, '--json'], database);
+      const guiResult = await client.request('project.profile', { repository });
+      const cliResult = await spawnCli(['understand', repository, '--json'], database);
 
-    expect(cliResult.code).toBe(0);
-    expect(cliResult.stderr).toBe('');
-    expect(cliResult.stdout.trim().split(/\r?\n/u)).toHaveLength(1);
-    const cliProfile = JSON.parse(cliResult.stdout) as ProjectProfileResult;
-    expect(deterministicProfile(guiResult)).toStrictEqual(deterministicProfile(cliProfile));
-    await expect(access(database)).rejects.toMatchObject({ code: 'ENOENT' });
-  }, 20_000);
+      expect(cliResult.code).toBe(0);
+      expect(cliResult.stderr).toBe('');
+      expect(cliResult.stdout.trim().split(/\r?\n/u)).toHaveLength(1);
+      const cliProfile = JSON.parse(cliResult.stdout) as ProjectProfileResult;
+      expect(deterministicProfile(guiResult)).toStrictEqual(deterministicProfile(cliProfile));
+      await expect(access(database)).rejects.toMatchObject({ code: 'ENOENT' });
+    },
+    20_000,
+  );
 });

@@ -20,18 +20,20 @@ The MVP does not include AI, model downloads, risk scoring, dependency/blast-rad
 
 ## Iteration 5 status
 
-Iteration 5 is in progress. Its first vertical slice adds bounded, deterministic understanding for a
-single-root Node/Vite/Vitest repository. Opening a repository builds the same versioned
-`ProjectProfile` through the core, protocol, CLI, native bridge, and desktop. The profile reports
-detected tooling, scripts, test locations, confidence, ambiguities, warnings, and the file evidence
-behind each conclusion.
+Iteration 5 is in progress. Its implemented slices add bounded, deterministic understanding for
+single-root Node projects using Vite, Vitest, or Jest, and for a plain static site confirmed when a
+complete inventory finds a root `index.html` and no Vite evidence. Opening a repository builds the
+same versioned `ProjectProfile` through the core, protocol, CLI, native bridge, and desktop. The
+profile reports detected tooling, scripts, test locations, confidence, ambiguities, warnings, and
+the file evidence behind each conclusion. A Vite project that also contains `index.html` remains
+classified as Vite rather than as a plain static site.
 
-Profiling is read-only: it does not run a discovered script, write repository or configuration
-files, or initialize the SQLite run-history database. Observed scripts are unapproved task
-candidates, not executable policy. A scan that reaches a configured budget returns an explicit
-partial profile, while a stopped scan returns a distinct cancelled result. Broader ecosystem
-detection, automatic planning, configuration schema version 2, and AI are not implemented by this
-slice.
+Profiling is read-only: it does not run a discovered script, start a static preview server, write
+repository or configuration files, or initialize the SQLite run-history database. Observed scripts
+are unapproved task candidates, not executable policy; the static-site preview finding is a
+capability, not a command. A scan that reaches a configured budget returns an explicit partial
+profile, while a stopped scan returns a distinct cancelled result. Broader ecosystem detection,
+automatic planning, configuration schema version 2, and AI are not implemented by these slices.
 
 ## Architecture
 

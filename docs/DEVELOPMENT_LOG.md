@@ -2410,3 +2410,328 @@ Next safe step:
 
 - Commit this coherent 5A checkpoint when authorized, then implement only the fixture-driven Jest
   and plain-static-site 5B slice without adding execution, planning, schema v2, or AI.
+
+## 2026-09-13 — Iteration 5 slice 5A durable checkpoint
+
+Status: COMPLETE
+
+Completed:
+
+- Recovered and re-audited the validated 5A tree, staged only its intentional source, tests,
+  fixtures, documentation, and lockfile changes, and committed it as `0c682b3`.
+- Confirmed no Jest/static-site or later-slice implementation was included.
+
+Affected:
+
+- Git history only; the commit contains the previously validated 5A implementation.
+
+Validated:
+
+- The staged patch contained exactly 62 intended files, had no unstaged/untracked remainder, and
+  passed `git diff --cached --check`.
+- `v0.1.0` remains unchanged on `fb1880d`.
+
+Remaining:
+
+- Implement and validate only TASK-014 slice 5B.
+
+Next safe step:
+
+- Add Jest and plain-static fixtures, then extend the existing read-only sensor behavior with Vite
+  precedence and no new interface contracts.
+
+## 2026-09-13 — Iteration 5 slice 5B start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Confirmed the 5B boundary: Jest evidence plus plain root `index.html` detection, with Vite taking
+  precedence when both signals exist.
+- Confirmed existing profile, core, protocol, CLI, native, and desktop contracts are sufficient.
+
+Affected:
+
+- Planned fixture, project-intelligence sensor/test, interface-regression test, and documentation
+  updates only.
+
+Validated:
+
+- Slice 5A is durable at `0c682b3`; the working tree was clean before this checkpoint.
+
+Remaining:
+
+- Implement fixture-driven 5B detection and prove unchanged interface exposure and read-only
+  behavior.
+
+Next safe step:
+
+- Define exact evidence and confidence semantics for Jest and static sites, then add failing focused
+  tests before production sensor changes.
+
+## 2026-09-13 — Iteration 5 slice 5B sensor and fixture checkpoint
+
+Status: COMPLETE
+
+Completed:
+
+- Extended the existing read-only Node sensor with explicit Jest detection and confirmed plain
+  root `index.html` static-site detection.
+- Added Jest and plain-static fixtures, plus a Vite-with-`index.html` regression fixture; no static
+  preview command or project execution was introduced.
+- Kept malformed package metadata from producing an unjustified static-site classification.
+
+Affected:
+
+- `packages/project-intelligence/src/sensors/node.ts`
+- `packages/project-intelligence/tests/profile.test.ts`
+- `fixtures/project-intelligence/node-jest/`
+- `fixtures/project-intelligence/plain-static/`
+- `fixtures/project-intelligence/node-vite-vitest/index.html`
+
+Validated:
+
+- Project-intelligence formatting, lint, typecheck, all 15 tests, and build passed.
+- Fixture snapshots prove profiling leaves the Jest, static, and Vite fixtures byte-for-byte
+  unchanged.
+
+Remaining:
+
+- Validate unchanged core/protocol/CLI/native/desktop exposure and reconcile slice documentation.
+- Run the sequential full repository regression gate.
+
+Next safe step:
+
+- Run the parameterized desktop/CLI/protocol profile-equivalence test for all three fixture stacks,
+  then audit the interface diff before documenting the result.
+
+## 2026-09-13 — Iteration 5 slice 5B interface regression checkpoint
+
+Status: COMPLETE
+
+Completed:
+
+- Extended the existing integration assertion across Node/Vite/Vitest, Node/Jest, and plain-static
+  fixtures without changing any core, protocol, CLI, native, or desktop production contract.
+- Confirmed each normalized profile is identical through CLI JSON and desktop-to-protocol paths.
+
+Affected:
+
+- `apps/desktop/tests/protocol-core.integration.test.ts`
+
+Validated:
+
+- Focused desktop/core equivalence suite passed: 4 tests.
+- Every 5B profile-only interface case confirmed that its configured SQLite database path remained
+  absent.
+
+Remaining:
+
+- Complete documentation/status reconciliation and the full sequential repository regression gate.
+
+Next safe step:
+
+- Audit the 5B documentation diff, update TASK-014 status, and record a pre-regression checkpoint.
+
+## 2026-09-13 — Iteration 5 slice 5B full regression start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Reconciled architecture, package, fixture, desktop, root, and user documentation for Jest,
+  plain-static detection, and Vite precedence.
+- Confirmed 5B reuses all existing profile/interface contracts and changes no native or Rust source.
+
+Affected:
+
+- Project-intelligence sensor/tests and three fixture stacks.
+- One desktop/core interface-regression test and documentation only.
+
+Validated:
+
+- Project-intelligence lint, typecheck, 16 tests, and build passed after the final sensor/test edits.
+- Focused desktop/CLI/protocol equivalence passed for all three profiles: 4 tests.
+- Targeted formatting and diff checks passed.
+
+Remaining:
+
+- Run the full repository format, lint, typecheck, test, and build gates sequentially.
+- Reconcile final TASK-014 status and perform the complete Git scope/hygiene audit.
+
+Next safe step:
+
+- Run `corepack pnpm format:check`, `lint`, `typecheck`, `test`, and `build` sequentially, stopping
+  on the first genuine regression.
+
+## 2026-09-13 — Iteration 5 slice 5B full-test interruption
+
+Status: IN PROGRESS
+
+Completed:
+
+- Full workspace format, lint, and typecheck gates passed.
+- The full test graph reached all package suites and the new 5B project-intelligence and
+  profile-equivalence coverage passed.
+
+Affected:
+
+- No production change yet; investigation is limited to the existing desktop cancellation test
+  and its 5A cancellation boundary.
+
+Validated:
+
+- Project-intelligence passed 16 tests, including all 5B cases.
+- Desktop CLI/protocol profile equivalence passed all 4 cases.
+- Full tests stopped with 1 failure out of 32 desktop tests: the verification-cancellation test
+  timed out waiting for the persisted interrupted terminal message under concurrent Turbo load.
+
+Remaining:
+
+- Determine whether the failure is a test scheduler race or a cancellation behavior defect and
+  apply only the smallest genuine stability fix.
+- Rerun the affected desktop suite, then restart the full test and build gates.
+
+Next safe step:
+
+- Trace the test's cancellation timing through the mock client and React state transition; retain
+  all persisted-terminal assertions and do not extend 5B scope.
+
+## 2026-09-13 — Desktop cancellation race diagnosis
+
+Status: IN PROGRESS
+
+Completed:
+
+- Traced the failure to mock/test timing rather than the production cancellation state machine.
+- Found that the mock applied an uninterruptible request delay before emitting the first check and
+  then used another wall-clock delay for cancellation acknowledgement; under concurrent Turbo load,
+  the test's terminal query could expire while the UI correctly remained in `cancelling`.
+- Replaced the test-only acknowledgement timer with an explicitly released promise barrier and
+  made the long-running mock emit its first check before waiting.
+
+Affected:
+
+- `apps/desktop/src/engine/mock-engine-client.ts`
+- `apps/desktop/tests/app.test.tsx`
+
+Validated:
+
+- The original failure retained the disabled `Stopping…` state, showing that React cancellation was
+  accepted; it lacked only the delayed mock terminal within the query window.
+- Focused validation of the deterministic mock fix is pending.
+
+Remaining:
+
+- Prove the transient cancelling state and exact persisted cancelled terminal repeatedly, then run
+  the complete desktop suite.
+
+Next safe step:
+
+- Format/typecheck the two desktop files and repeat the focused cancellation test before resuming
+  the full repository test graph.
+
+## 2026-09-13 — Desktop cancellation race fix validated
+
+Status: COMPLETE
+
+Completed:
+
+- Made mock verification timing deterministic by separating check latency from repository-load
+  latency and replacing the wall-clock cancellation acknowledgement with a controlled barrier.
+- Preserved assertions for the visible `cancelling` state, disabled Stop control, exact persisted
+  cancelled terminal message, BLOCK gate, absence of an error, and re-enabled Run control.
+
+Affected:
+
+- `apps/desktop/src/engine/mock-engine-client.ts`
+- `apps/desktop/tests/app.test.tsx`
+
+Validated:
+
+- Desktop formatting, lint, and typecheck passed.
+- The focused cancellation test passed 6 consecutive executions.
+- The complete desktop suite passed: 32 tests across 4 files.
+
+Remaining:
+
+- Rerun the full repository test graph after the mock hardening, then run the full build and final
+  static checks.
+
+Next safe step:
+
+- Record the resumed full-regression checkpoint and run `corepack pnpm test` without overlapping
+  another Turbo graph.
+
+## 2026-09-13 — Iteration 5 slice 5B full regression restart
+
+Status: IN PROGRESS
+
+Completed:
+
+- Hardened Vite precedence so an explicit direct Vite script prevents plain-static
+  misclassification even without a Vite dependency or config file.
+- Added inventory-completeness context so a truncated or failed traversal cannot use missing Vite
+  evidence to assert a confirmed static site.
+- Stabilized the unrelated 5A desktop cancellation mock race without changing production behavior.
+
+Affected:
+
+- 5B project-intelligence contracts internal to sensors, inventory, detection, and focused tests.
+- Desktop mock/test timing only; core, protocol, CLI, native, storage, and application cancellation
+  code remain unchanged.
+
+Validated:
+
+- Project-intelligence lint/typecheck and all 18 tests passed.
+- Desktop cancellation passed 6 focused repetitions and all 32 desktop tests passed.
+
+Remaining:
+
+- Complete the full workspace test and build graphs, then rerun format/lint/typecheck/diff checks on
+  the final source state.
+
+Next safe step:
+
+- Run `corepack pnpm test`, followed by `corepack pnpm build` only after the test graph exits.
+
+## 2026-09-13 — Iteration 5 slice 5B final validation and handoff
+
+Status: COMPLETE
+
+Completed:
+
+- Added evidence-backed Jest and plain root-`index.html` detection while preserving Vite
+  precedence and the existing profile/interface contracts.
+- Prevented incomplete inventories or malformed package metadata from producing a confirmed
+  absence-based static-site classification.
+- Made the desktop cancellation test deterministic with an explicit mock acknowledgement barrier;
+  production cancellation behavior remains unchanged.
+- Reconciled TASK-014, architecture, package, fixture, desktop, root, and user documentation.
+
+Affected:
+
+- `packages/project-intelligence/` detection and focused tests.
+- `fixtures/project-intelligence/` Jest, plain-static, and Vite-entry evidence.
+- Desktop mock timing and profile-equivalence tests; documentation only elsewhere.
+
+Validated:
+
+- Full workspace format, lint, and typecheck passed; lint and typecheck completed all 24 tasks.
+- Full workspace tests passed all 24 tasks, including 18 project-intelligence, 32 desktop, 21 CLI,
+  and 11 protocol tests.
+- Full workspace build passed all 13 package builds.
+- Fixture snapshots and interface tests proved no repository/configuration/database writes; the
+  existing no-command profiling regression remained green.
+- No Rust or native source changed, so Rust/Tauri/package gates were intentionally not rerun.
+
+Remaining:
+
+- Slice 5B is intentionally uncommitted pending explicit authorization.
+- TASK-014 slice 5C remains: Python/pytest evidence, declared workspace structure, mixed-project
+  coverage, and explicit ambiguity for multiple credible targets.
+
+Next safe step:
+
+- Review and commit only the slice 5B diff when authorized; begin slice 5C only in a separate,
+  explicitly requested continuation.

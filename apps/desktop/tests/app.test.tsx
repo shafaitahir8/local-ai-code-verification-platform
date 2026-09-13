@@ -254,11 +254,16 @@ describe('desktop dashboard', () => {
 
   it('shows cancellation progress and renders the persisted interrupted run', async () => {
     const user = userEvent.setup();
+    let acknowledgeCancellation: () => void = () => undefined;
+    const cancellationAcknowledgement = new Promise<void>((resolve) => {
+      acknowledgeCancellation = resolve;
+    });
     render(
       <App
         client={createMockEngineClient({
-          latencyMs: 250,
-          verificationCancellationLatencyMs: 250,
+          latencyMs: 0,
+          verificationCheckLatencyMs: 10_000,
+          verificationCancellationBarrier: cancellationAcknowledgement,
         })}
         pickRepository={async () => null}
         initialRepository="C:\\work\\running-project"
@@ -269,11 +274,13 @@ describe('desktop dashboard', () => {
     await user.click(run);
 
     expect(await screen.findByRole('heading', { name: 'Collecting evidence' })).toBeInTheDocument();
+    expect(await screen.findByText('running')).toBeInTheDocument();
     const stop = screen.getByRole('button', { name: 'Stop run' });
     expect(screen.getByText('Running configured checks')).toBeInTheDocument();
     await user.click(stop);
 
     expect(screen.getByRole('button', { name: 'Stopping…' })).toBeDisabled();
+    acknowledgeCancellation();
     expect(await screen.findByText('Verification interrupted and saved.')).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.getByText('Quality gate: BLOCK')).toBeInTheDocument();

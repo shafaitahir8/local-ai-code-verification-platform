@@ -14,7 +14,8 @@ export interface MockEngineClientOptions {
   readonly configExists?: boolean;
   readonly latencyMs?: number;
   readonly profileLatencyMs?: number;
-  readonly verificationCancellationLatencyMs?: number;
+  readonly verificationCheckLatencyMs?: number;
+  readonly verificationCancellationBarrier?: Promise<void>;
   readonly failMethod?: ProtocolMethod;
   readonly profileCompleteness?: 'complete' | 'partial';
   readonly profileAmbiguous?: boolean;
@@ -449,7 +450,8 @@ export class MockEngineClient implements EngineClient {
   readonly #scenario: MockGateScenario;
   readonly #latencyMs: number;
   readonly #profileLatencyMs: number;
-  readonly #verificationCancellationLatencyMs: number;
+  readonly #verificationCheckLatencyMs: number;
+  readonly #verificationCancellationBarrier?: Promise<void>;
   readonly #failMethod?: ProtocolMethod;
   readonly #profileCompleteness: ProjectProfile['completeness'];
   readonly #profileAmbiguous: boolean;
@@ -461,7 +463,8 @@ export class MockEngineClient implements EngineClient {
     this.#configExists = options.configExists ?? true;
     this.#latencyMs = options.latencyMs ?? 40;
     this.#profileLatencyMs = options.profileLatencyMs ?? this.#latencyMs;
-    this.#verificationCancellationLatencyMs = options.verificationCancellationLatencyMs ?? 0;
+    this.#verificationCheckLatencyMs = options.verificationCheckLatencyMs ?? this.#latencyMs;
+    this.#verificationCancellationBarrier = options.verificationCancellationBarrier;
     this.#failMethod = options.failMethod;
     this.#profileCompleteness = options.profileCompleteness ?? 'complete';
     this.#profileAmbiguous = options.profileAmbiguous ?? false;
@@ -473,8 +476,8 @@ export class MockEngineClient implements EngineClient {
     params: ProtocolParamsMap[Method],
     options: EngineRequestOptions = {},
   ): Promise<ProtocolResultMap[Method]> {
-    if (method !== 'project.profile') {
-      await pause(this.#latencyMs, method === 'verification.run' ? undefined : options.signal);
+    if (method !== 'project.profile' && method !== 'verification.run') {
+      await pause(this.#latencyMs, options.signal);
     }
 
     if (this.#failMethod === method) {
@@ -706,12 +709,12 @@ export class MockEngineClient implements EngineClient {
           };
           options.onEvent?.(started);
           try {
-            await pause(this.#latencyMs, options.signal);
+            await pause(this.#verificationCheckLatencyMs, options.signal);
           } catch (error) {
             if (!(error instanceof EngineRequestError) || error.code !== 'INTERRUPTED') {
               throw error;
             }
-            await pause(this.#verificationCancellationLatencyMs);
+            await this.#verificationCancellationBarrier;
             const completedAt = new Date().toISOString();
             const cancelledResult: CheckResult = {
               ...result,

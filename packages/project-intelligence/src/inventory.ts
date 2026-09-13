@@ -193,8 +193,11 @@ export async function buildProjectInventory(options: {
   const files = new Map(
     entries.filter((entry) => entry.kind === 'file').map((entry) => [entry.path, entry]),
   );
+  const traversalComplete =
+    state.limitsReached.size === 0 &&
+    !state.warnings.some((warning) => warning.affectsCompleteness);
   progress(options.onProgress, state, 'Repository inventory complete.');
-  return { repositoryRoot, inventory: { entries, files }, state };
+  return { repositoryRoot, inventory: { entries, files, traversalComplete }, state };
 }
 
 function isContainedPath(repositoryRoot: string, absolutePath: string): boolean {

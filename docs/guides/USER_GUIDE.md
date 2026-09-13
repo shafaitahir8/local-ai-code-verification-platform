@@ -7,15 +7,15 @@ checks declared by that repository, collects their evidence, and reports **PASS*
 **BLOCK**. Verification and history remain on the local computer; v0.1.0 does not use AI, cloud
 services, telemetry, or a network server.
 
-The first Iteration 5 slice can also build a read-only project profile for a single-root
-Node/Vite/Vitest repository. It reports what it found and why without running project commands or
-changing the repository.
+The implemented Iteration 5 slices can also build a read-only project profile for a single-root
+Node project using Vite, Vitest, or Jest, or for a plain static site with a root `index.html`. The
+profile reports what it found and why without running project commands or changing the repository.
 
 ## Features
 
 - Opens a local Git repository and summarizes its branch and changed files.
-- Builds a bounded deterministic profile of supported Node/Vite/Vitest project metadata and shows
-  confidence, ambiguities, warnings, and supporting file evidence.
+- Builds a bounded deterministic profile of supported Node/Vite/Vitest/Jest or plain-static project
+  metadata and shows confidence, ambiguities, warnings, and supporting file evidence.
 - Suggests checks from project metadata and stores approved commands in `.verify/project.yml`.
 - Runs configured test, lint, typecheck, build, and other generic commands with live output.
 - Applies deterministic block-or-warn policy to normalized results.
@@ -28,14 +28,20 @@ changing the repository.
 
 ## Current project-understanding scope
 
-Iteration 5 is not complete. The current profile sensor covers only the first single-root
-Node/Vite/Vitest vertical slice. It can recognize manifest, package-manager, Vite, Vitest, script,
-test-location, and supported build/lint/typecheck signals when repository evidence proves them.
+Iteration 5 is not complete. The current profile sensor covers single-root Node projects using
+Vite, Vitest, or Jest and plain static sites confirmed when a complete inventory finds a root
+`index.html` without Vite evidence. It can recognize manifest, package-manager, Vite, Vitest, and
+Jest configuration, dependency, or direct-script signals, supplemented by conventional test
+locations, plus supported build/lint/typecheck signals when repository evidence proves them. If a
+Vite project also contains `index.html`, it remains classified as Vite instead of being labeled a
+plain static site.
 
-Discovered scripts are displayed as unapproved candidates. Profiling never executes them, changes
-`.verify/project.yml`, writes source files, or creates run-history records. A profile can be
-complete, partial because a scan budget was reached, or cancelled by the user. These states are
-shown separately. No AI, automatic verification plan, or schema-version-2 behavior is involved.
+Discovered scripts are displayed as unapproved candidates. A plain static-site detection exposes a
+preview capability only; it does not start a preview server or invent a command. Profiling never
+executes a command, changes `.verify/project.yml`, writes source files, or creates run-history
+records. A profile can be complete, partial because a scan budget was reached, or cancelled by the
+user. These states are shown separately. No AI, automatic verification plan, or schema-version-2
+behavior is involved.
 
 ## Before you begin
 

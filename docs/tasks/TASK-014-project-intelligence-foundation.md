@@ -2,9 +2,10 @@
 
 ## Status
 
-In progress. ADR-009 through ADR-014 are accepted, and the first 5A Node/Vite/Vitest vertical slice
-is implemented and validated across core, protocol, CLI, native bridge, and desktop. TASK-014
-remains open for the ordered 5B and 5C ecosystem, ambiguity, and regression coverage below.
+In progress. ADR-009 through ADR-014 are accepted. Slice 5A is implemented and validated across
+core, protocol, CLI, native bridge, and desktop; slice 5B adds validated Jest and plain-static-site
+profiles through those unchanged interfaces, including Vite precedence for root `index.html`.
+TASK-014 remains open for the ordered 5C ecosystem, ambiguity, and regression coverage below.
 
 ## Goal
 
@@ -130,7 +131,7 @@ Iteration 5 is completed in three ordered internal slices without changing later
 1. **5A — first vertical slice:** single-root Node/JavaScript/TypeScript, npm/pnpm/Yarn lockfile and
    declaration evidence, Vite, Vitest, and declared root scripts.
 2. **5B — additional deterministic profiles:** Jest and plain static sites. A root `index.html`
-   without conflicting framework evidence is a confirmed static preview candidate; a Vite
+   without conflicting framework evidence is a confirmed static preview capability; a Vite
    `index.html` remains Vite evidence rather than a plain-site classification.
 3. **5C — breadth and ambiguity:** Python packaging markers, pytest, and declared npm/pnpm/Yarn
    workspaces. Multiple credible workspace/test/run targets remain explicit ambiguities; no default
@@ -256,7 +257,8 @@ smoke before declaring the iteration complete.
 
 ## Next safe step
 
-Implement only slice 5B: add fixture-driven Jest and plain-static-site profiling, including the
-regression that keeps a Vite `index.html` classified as Vite rather than a plain site. Reuse the
-existing profile, sensor, core, protocol, CLI, native, and desktop contracts; do not add execution,
+After making slice 5B durable when authorized, implement only slice 5C: add fixture-driven Python
+packaging and pytest evidence, declared npm/pnpm/Yarn workspace structure, mixed-project coverage,
+and explicit ambiguity for multiple credible workspace/test/run targets. Reuse the existing
+profile and interface contracts; do not choose a default target or add execution, schema-v2,
 Iteration 6 planning, or Iteration 7 AI behavior.
