@@ -11,6 +11,7 @@ import { throwIfProjectProfileCancelled } from './cancelled.js';
 import type {
   ProjectInventory,
   ProjectInventoryEntry,
+  ProjectMetadataText,
   ProjectMetadataReader,
   ProjectScanLimits,
 } from './contracts.js';
@@ -226,73 +227,81 @@ export function createProjectMetadataReader(options: {
   readonly now: () => number;
   readonly startedAt: number;
 }): ProjectMetadataReader {
+  const reads = new Map<string, Promise<ProjectMetadataText | null>>();
   return {
     async readText(path) {
       throwIfProjectProfileCancelled(options.signal);
       if (!validRelativePath(path)) throw new Error(`Metadata path is not normalized: ${path}`);
-      const entry = options.inventory.files.get(path);
-      if (entry === undefined) return null;
+      const cached = reads.get(path);
+      if (cached !== undefined) return cached;
 
-      if (elapsedLimitReached(options.startedAt, options.limits, options.now, options.state)) {
-        return null;
-      }
-      if (entry.size > options.limits.maxFileBytes) {
-        options.state.limitsReached.add('file-bytes');
-        options.state.warnings.push({
-          code: 'METADATA_FILE_TOO_LARGE',
-          message: `Skipped ${path} because it exceeds the metadata file-size limit.`,
-          path,
-          affectsCompleteness: true,
-        });
-        return null;
-      }
-      if (options.state.bytesRead + entry.size > options.limits.maxTotalBytes) {
-        options.state.limitsReached.add('aggregate-bytes');
-        options.state.warnings.push({
-          code: 'METADATA_BUDGET_REACHED',
-          message: `Skipped ${path} because the aggregate metadata-read limit was reached.`,
-          path,
-          affectsCompleteness: true,
-        });
-        return null;
-      }
+      const read = (async (): Promise<ProjectMetadataText | null> => {
+        const entry = options.inventory.files.get(path);
+        if (entry === undefined) return null;
 
-      const absolutePath = resolve(options.repositoryRoot, ...path.split('/'));
-      const resolvedPath = await realpath(absolutePath);
-      throwIfProjectProfileCancelled(options.signal);
-      if (!isContainedPath(options.repositoryRoot, resolvedPath)) {
-        throw new Error(`Metadata path resolves outside the repository: ${path}`);
-      }
-      const fileStat = await lstat(resolvedPath);
-      if (!fileStat.isFile() || fileStat.isSymbolicLink()) {
-        throw new Error(`Metadata path is no longer a regular file: ${path}`);
-      }
+        if (elapsedLimitReached(options.startedAt, options.limits, options.now, options.state)) {
+          return null;
+        }
+        if (entry.size > options.limits.maxFileBytes) {
+          options.state.limitsReached.add('file-bytes');
+          options.state.warnings.push({
+            code: 'METADATA_FILE_TOO_LARGE',
+            message: `Skipped ${path} because it exceeds the metadata file-size limit.`,
+            path,
+            affectsCompleteness: true,
+          });
+          return null;
+        }
+        if (options.state.bytesRead + entry.size > options.limits.maxTotalBytes) {
+          options.state.limitsReached.add('aggregate-bytes');
+          options.state.warnings.push({
+            code: 'METADATA_BUDGET_REACHED',
+            message: `Skipped ${path} because the aggregate metadata-read limit was reached.`,
+            path,
+            affectsCompleteness: true,
+          });
+          return null;
+        }
 
-      const content = await readFile(resolvedPath);
-      throwIfProjectProfileCancelled(options.signal);
-      if (content.byteLength > options.limits.maxFileBytes) {
-        options.state.limitsReached.add('file-bytes');
-        options.state.warnings.push({
-          code: 'METADATA_FILE_TOO_LARGE',
-          message: `Skipped ${path} because it exceeds the metadata file-size limit.`,
-          path,
-          affectsCompleteness: true,
-        });
-        return null;
-      }
-      if (options.state.bytesRead + content.byteLength > options.limits.maxTotalBytes) {
-        options.state.limitsReached.add('aggregate-bytes');
-        options.state.warnings.push({
-          code: 'METADATA_BUDGET_REACHED',
-          message: `Skipped ${path} because the aggregate metadata-read limit was reached.`,
-          path,
-          affectsCompleteness: true,
-        });
-        return null;
-      }
+        const absolutePath = resolve(options.repositoryRoot, ...path.split('/'));
+        const resolvedPath = await realpath(absolutePath);
+        throwIfProjectProfileCancelled(options.signal);
+        if (!isContainedPath(options.repositoryRoot, resolvedPath)) {
+          throw new Error(`Metadata path resolves outside the repository: ${path}`);
+        }
+        const fileStat = await lstat(resolvedPath);
+        if (!fileStat.isFile() || fileStat.isSymbolicLink()) {
+          throw new Error(`Metadata path is no longer a regular file: ${path}`);
+        }
 
-      options.state.bytesRead += content.byteLength;
-      return { text: content.toString('utf8'), bytes: content.byteLength };
+        const content = await readFile(resolvedPath);
+        throwIfProjectProfileCancelled(options.signal);
+        if (content.byteLength > options.limits.maxFileBytes) {
+          options.state.limitsReached.add('file-bytes');
+          options.state.warnings.push({
+            code: 'METADATA_FILE_TOO_LARGE',
+            message: `Skipped ${path} because it exceeds the metadata file-size limit.`,
+            path,
+            affectsCompleteness: true,
+          });
+          return null;
+        }
+        if (options.state.bytesRead + content.byteLength > options.limits.maxTotalBytes) {
+          options.state.limitsReached.add('aggregate-bytes');
+          options.state.warnings.push({
+            code: 'METADATA_BUDGET_REACHED',
+            message: `Skipped ${path} because the aggregate metadata-read limit was reached.`,
+            path,
+            affectsCompleteness: true,
+          });
+          return null;
+        }
+
+        options.state.bytesRead += content.byteLength;
+        return { text: content.toString('utf8'), bytes: content.byteLength };
+      })();
+      reads.set(path, read);
+      return read;
     },
   };
 }

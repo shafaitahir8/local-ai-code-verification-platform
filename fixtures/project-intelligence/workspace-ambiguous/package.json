@@ -1,0 +1,8 @@
+{
+  "name": "ambiguous-workspace-fixture",
+  "private": true,
+  "packageManager": "npm@11.6.0",
+  "workspaces": [
+    "packages/*"
+  ]
+}

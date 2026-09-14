@@ -66,6 +66,10 @@ describe('desktop dashboard', () => {
     );
     expect(screen.getAllByText('Vite')).toHaveLength(2);
     expect(screen.getAllByText('confirmed').length).toBeGreaterThan(0);
+    expect(screen.getByRole('heading', { name: 'Detected workspaces' })).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Detected workspace units' })).toHaveTextContent(
+      'profile-project',
+    );
     expect(
       screen.getByRole('heading', { name: 'Observed command candidates' }),
     ).toBeInTheDocument();

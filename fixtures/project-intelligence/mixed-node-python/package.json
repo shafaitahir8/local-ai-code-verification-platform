@@ -1,0 +1,11 @@
+{
+  "name": "mixed-node-python-fixture",
+  "private": true,
+  "packageManager": "npm@11.6.0",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "4.0.0"
+  }
+}

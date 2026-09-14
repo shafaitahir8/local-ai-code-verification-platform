@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type {
   ProjectCapability,
   ProjectEvidence,
@@ -22,6 +24,7 @@ const DIRECT_VITE_SCRIPT_PATTERN =
   /^(?:(?:npx|npm exec|pnpm exec|yarn exec)\s+(?:--\s+)?)?vite(?:\s|$)/u;
 const TEST_PATH_PATTERN =
   /(?:^|\/)(?:__tests__|tests?|spec)(?:\/|$)|\.(?:test|spec)\.[cm]?[jt]sx?$/u;
+const JAVASCRIPT_PATH_PATTERN = /\.(?:[cm]?js|jsx)$/u;
 
 interface PackageManifest {
   readonly name?: string;
@@ -74,12 +77,7 @@ function parseManifest(source: string): PackageManifest {
 }
 
 function stableSuffix(value: string): string {
-  let hash = 2_166_136_261;
-  for (const character of value) {
-    hash ^= character.codePointAt(0) ?? 0;
-    hash = Math.imul(hash, 16_777_619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, '0');
+  return createHash('sha256').update(value).digest('hex').slice(0, 16);
 }
 
 function scriptKind(name: string): ProjectTaskKind | null {
@@ -248,6 +246,7 @@ export class NodeProjectSensor implements ProjectSensor {
     }
 
     const typescriptEvidence: ProjectEvidence[] = [];
+    const javascriptEvidence: ProjectEvidence[] = [];
     const eslintEvidence: ProjectEvidence[] = [];
 
     if (manifest !== null) {
@@ -322,6 +321,22 @@ export class NodeProjectSensor implements ProjectSensor {
     if (typescriptEvidence.length > 0) {
       addCapability('language.typescript', 'language', 'TypeScript', typescriptEvidence);
       addCapability('typechecker.typescript', 'typechecker', 'TypeScript', typescriptEvidence);
+    }
+    for (const path of [...context.inventory.files.keys()]
+      .filter((path) => JAVASCRIPT_PATH_PATTERN.test(path))
+      .sort(compareText)) {
+      javascriptEvidence.push(
+        addEvidence({
+          id: `node.path.javascript.${stableSuffix(path)}`,
+          sensorId: SENSOR_ID,
+          kind: 'path',
+          path,
+          summary: 'A JavaScript source or configuration file is present.',
+        }),
+      );
+    }
+    if (javascriptEvidence.length > 0) {
+      addCapability('language.javascript', 'language', 'JavaScript', javascriptEvidence);
     }
     if (eslintEvidence.length > 0) {
       addCapability('linter.eslint', 'linter', 'ESLint', eslintEvidence);

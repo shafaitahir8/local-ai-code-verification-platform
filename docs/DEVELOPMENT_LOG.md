@@ -2735,3 +2735,783 @@ Next safe step:
 
 - Review and commit only the slice 5B diff when authorized; begin slice 5C only in a separate,
   explicitly requested continuation.
+
+## 2026-09-14 — Iteration 5 slice 5B durable checkpoint
+
+Status: COMPLETE
+
+Completed:
+
+- Reviewed and committed the validated Jest/static-site slice as
+  `89e5e00551657632ca391bddaa380f8d62c4fd60`.
+- Confirmed the working tree was clean immediately after the commit and the `v0.1.0` tag remained
+  unchanged.
+
+Affected:
+
+- Slice 5B source, tests, fixtures, and documentation only.
+
+Validated:
+
+- Reviewed the complete staged diff and file list.
+- `git diff --cached --check` passed before commit.
+
+Remaining:
+
+- TASK-014 slice 5C remains unimplemented.
+
+Next safe step:
+
+- Define the smallest fixture-driven Python/pytest and declared-workspace detection changes while
+  preserving the existing profile and interface contracts.
+
+## 2026-09-14 — Iteration 5 slice 5C contract and fixture start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Recovered the accepted TASK-014, ADR-009 through ADR-014, and slice 5A/5B architecture boundaries.
+- Confirmed the 5C principle: detect and describe credible alternatives without selecting one.
+
+Affected:
+
+- Planned work is limited to `@verify/project-intelligence`, committed metadata-only fixtures,
+  existing-interface regression tests, and documentation.
+
+Validated:
+
+- Slice 5B commit boundary is clean; no 5C work pre-existed.
+
+Remaining:
+
+- Inspect the current profile merge model and implement Python/pytest, declared workspaces,
+  mixed-project preservation, and explicit ambiguity.
+
+Next safe step:
+
+- Add fixture-first contract tests, extending the portable profile only if the existing workspace,
+  task-candidate, and ambiguity records cannot represent a required finding.
+
+## 2026-09-14 — Iteration 5 slice 5C Python and pytest detection
+
+Status: COMPLETE
+
+Completed:
+
+- Added an isolated Python sensor for `pyproject.toml`, `requirements.txt`, `setup.py`, `setup.cfg`,
+  dedicated pytest configuration, exact pytest dependencies, and Python test-path evidence.
+- Kept pytest unconfirmed when only filenames or related packages such as `pytest-cov` are present;
+  no pytest command is invented.
+- Added valid and malformed metadata fixtures with execution traps and byte snapshots.
+
+Affected:
+
+- `packages/project-intelligence/src/sensors/python.ts`
+- `packages/project-intelligence/tests/python.test.ts`
+- `fixtures/project-intelligence/python-pytest/` and `python-malformed/`
+
+Validated:
+
+- Python-focused tests passed, including malformed metadata, no-command, and no-write behavior.
+- The Python sensor receives only the bounded read-only sensor context.
+
+Remaining:
+
+- Complete declared workspace and mixed-project integration, then validate unchanged interfaces.
+
+Next safe step:
+
+- Integrate conservative npm/pnpm/Yarn workspace roots and explicit multi-target ambiguity.
+
+## 2026-09-14 — Iteration 5 slice 5C workspace and mixed-project detection
+
+Status: COMPLETE
+
+Completed:
+
+- Added conservative npm, pnpm, and Yarn workspace declaration parsing and inventory-backed child
+  workspace/task candidates.
+- Added mixed Node/Python preservation and central cross-sensor test-framework, test-command, and run-command ambiguity without selecting defaults.
+- Added shared metadata-read caching so multiple sensors consume one bounded read per path and do
+  not duplicate budget warnings.
+- Added fixed-ignore, directory-link, aggregate-budget, elapsed-budget, and sensor-merge coverage.
+
+Affected:
+
+- Project-intelligence coordinator, inventory, Python/workspace sensors, focused tests, and
+  metadata-only 5C fixtures.
+
+Validated:
+
+- All project-intelligence tests passed: 33 tests across 7 files.
+- Workspace execution sentinels remained absent and fixture snapshots remained unchanged.
+
+Remaining:
+
+- Expose workspace structure through existing CLI/desktop presentation and extend interface
+  equivalence across representative 5C fixtures.
+
+Next safe step:
+
+- Add presentation-only workspace rendering and run CLI/protocol/desktop equivalence with SQLite
+  paths asserted absent.
+
+## 2026-09-14 — Iteration 5 slice 5C interface equivalence
+
+Status: COMPLETE
+
+Completed:
+
+- Exposed detected workspace units in existing CLI human output and desktop project-profile
+  presentation without adding or changing a protocol/domain contract.
+- Extended core/protocol/CLI/desktop equivalence coverage across Python/pytest, npm/pnpm/Yarn
+  workspaces, mixed Node/Python, and ambiguous-workspace fixtures.
+
+Affected:
+
+- CLI formatting/tests, desktop profile rendering/tests, and interface integration fixtures.
+
+Validated:
+
+- CLI formatter test passed; desktop UI tests passed (21 tests); interface-equivalence tests passed
+  (10 tests).
+- CLI and desktop lint/typecheck and focused formatting passed.
+- Every equivalence case returned the same normalized profile and left the configured SQLite path
+  absent.
+
+Remaining:
+
+- Complete documentation reconciliation and make the Windows SEA/installed smoke assert the final
+  5C profile surface before the full regression/package gate.
+
+Next safe step:
+
+- Extend the existing smoke fixtures and assertions without changing runtime/native contracts, then
+  run the focused smoke-script validation.
+
+## 2026-09-14 — Iteration 5 slice 5C recovery audit
+
+Status: IN PROGRESS
+
+Completed:
+
+- Recovered the complete uncommitted 5C source, fixture, interface, package-smoke, and documentation
+  scope without resetting or rewriting prior work.
+- Confirmed slice 5B remains committed at `89e5e00551657632ca391bddaa380f8d62c4fd60`
+  and `v0.1.0` remains at `fb1880d7679c886c04520c4493911a0c141a6761`.
+
+Affected:
+
+- No new product behavior was added during recovery; this checkpoint updates only the recovery
+  journal.
+
+Validated:
+
+- Reviewed status, tracked diff, untracked fixtures/tests, recent history, TASK-014, architecture,
+  and ADR-009 through ADR-014.
+- Confirmed no Iteration 6/schema-v2/planning/AI/smart-action/risk code or tracked generated output;
+  sidecars, installers, targets, distributions, dependencies, and runtime databases remain ignored.
+
+Remaining:
+
+- Run the sequential full workspace gate, then rebuild and validate Rust, SEA, Tauri development,
+  NSIS packaging, and the installed outside-checkout workflow.
+
+Next safe step:
+
+- Record the full-regression start checkpoint and run `corepack pnpm format:check` first, without an
+  overlapping Turbo graph.
+
+## 2026-09-14 — Iteration 5 final workspace regression start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Completed the 5C recovery and scope audit and confirmed the enhanced SEA and installed-UI smoke
+  scripts are ready for validation.
+
+Affected:
+
+- Final 5C working tree; no additional runtime behavior in this checkpoint.
+
+Validated:
+
+- Focused project-intelligence, CLI, desktop, interface-equivalence, and smoke-script checks are
+  green at the recovered checkpoint.
+
+Remaining:
+
+- Sequential full format, lint, typecheck, test, build, and diff-whitespace gates.
+
+Next safe step:
+
+- Run `corepack pnpm format:check`, followed only after success by lint, typecheck, tests, and build.
+
+## 2026-09-14 — Iteration 5 final formatting correction
+
+Status: COMPLETE
+
+Completed:
+
+- Applied the repository formatter to the updated architecture table after the first format check
+  identified that single Markdown drift.
+
+Affected:
+
+- `ARCHITECTURE.md` formatting only; no runtime or test behavior changed.
+
+Validated:
+
+- `corepack pnpm format:check`: passed after the correction.
+
+Remaining:
+
+- Full lint, typecheck, test, build, and diff-whitespace gates.
+
+Next safe step:
+
+- Run `corepack pnpm lint` with no overlapping Turbo graph.
+
+## 2026-09-14 — Iteration 5 full-test environment diagnosis
+
+Status: IN PROGRESS
+
+Completed:
+
+- Completed the final workspace format, lint, and typecheck gates.
+- Traced the full-test interruption to three unchanged CLI cancellation cases whose child-process
+  control is denied by the restricted execution sandbox, rather than to a slice 5C regression.
+- Re-ran the underlying Windows generic-command cancellation suite with host process permissions;
+  all nine tests passed without changing behavior or weakening assertions.
+- Audited the final detector and packaged-smoke scope and identified small correctness/coverage
+  gaps to close before making TASK-014 durable.
+
+Affected:
+
+- Validation environment and recovery journal only; no production behavior changed in this
+  checkpoint.
+
+Validated:
+
+- `corepack pnpm format:check`: passed.
+- `corepack pnpm lint`: passed (24 tasks).
+- `corepack pnpm typecheck`: passed (24 tasks).
+- `@verify/adapter-generic-command` with Windows process permissions: 9 tests passed.
+- The initial restricted full test graph passed 23 of 24 package tasks; only process-control tests
+  timed out under sandbox restrictions.
+
+Remaining:
+
+- Correct the audited false-positive/identity edge cases and complete the literal packaged profile
+  matrix, then rerun focused and full tests with the required process permissions.
+- Complete build, Rust, SEA, Tauri development, NSIS, installed-smoke, and final Git gates.
+
+Next safe step:
+
+- Apply focused detector/test corrections and expand the two existing package-smoke harnesses,
+  then rerun their focused validation before the elevated full test gate.
+
+## 2026-09-14 — Iteration 5 detector hardening
+
+Status: COMPLETE
+
+Completed:
+
+- Rejected malformed TOML dependency arrays instead of extracting unsupported pytest evidence.
+- Required at least one declared pnpm workspace pattern before confirming pnpm workspace
+  structure.
+- Replaced the former 32-bit derived-ID suffixes with deterministic SHA-256-derived suffixes and
+  added a regression using two paths that collided under the previous hash.
+- Added tentative JavaScript language evidence from observed JavaScript paths without adding any
+  framework inference or execution behavior.
+- Made centrally derived ambiguity records coalesce with an equivalent sensor record while keeping
+  invalid cross-sensor collisions isolated.
+
+Affected:
+
+- Node, Python, and workspace sensors; profile coordination; focused project-intelligence tests.
+
+Validated:
+
+- Project-intelligence lint and typecheck passed.
+- Project-intelligence tests passed: 37 tests across 7 files.
+- Project-intelligence build passed.
+- Desktop protocol/core equivalence and UI suites passed: 38 tests.
+- CLI profile formatter test passed; `git diff --check` passed.
+- Regression fixtures and temporary repositories remained read-only and no observed command ran.
+
+Remaining:
+
+- Complete and validate the literal SEA and installed-application profile matrices, then rerun the
+  full workspace gate with Windows process-control permissions.
+- Complete Rust, Tauri development, NSIS, installed-smoke, documentation, and Git gates.
+
+Next safe step:
+
+- Finish the two existing smoke harnesses without changing application contracts, validate their
+  syntax/lint/format, and then record the full-regression restart checkpoint.
+
+## 2026-09-14 — Iteration 5 packaged profile matrix readiness
+
+Status: COMPLETE
+
+Completed:
+
+- Recovered and reviewed the table-driven SEA and installed-application profile matrices that were
+  ahead of the previous checkpoint.
+- Confirmed both harnesses explicitly exercise Vite/Vitest with root `index.html` precedence,
+  Jest, plain static HTML, Python/pytest, npm/pnpm/Yarn workspaces, and mixed-project ambiguity.
+- Confirmed the installed harness performs `Understand Project` refresh for every fixture and
+  fingerprints repository, Git status, and runtime database state before and after profile-only
+  refresh.
+- Retained direct SEA profile cancellation plus installed verification cancellation/process-tree
+  cleanup, with no coverage claim beyond what each harness actually runs.
+
+Affected:
+
+- Existing SEA and installed-UI smoke scripts only; no runtime or public contract changed.
+
+Validated:
+
+- Both smoke scripts passed `node --check`.
+- CLI smoke-script lint and installed-UI script lint passed.
+- Command traps use `cmd.exe`, which remains available in the restricted no-Node smoke
+  environment; repository fingerprints also detect any attempted write that succeeds.
+
+Remaining:
+
+- Run the full sequential workspace regression from the final detector and smoke-script source.
+- Complete native, rebuilt SEA, Tauri development, NSIS, installed-application, and Git gates.
+
+Next safe step:
+
+- Append the full-regression restart checkpoint and run format, lint, typecheck, elevated tests,
+  build, and diff checks sequentially.
+
+## 2026-09-14 — Iteration 5 final workspace regression restart
+
+Status: IN PROGRESS
+
+Completed:
+
+- Completed focused detector hardening and package-smoke harness validation.
+
+Affected:
+
+- Final slice 5C source, fixtures, tests, smoke harnesses, and documentation.
+
+Validated:
+
+- Focused project-intelligence, desktop equivalence/UI, CLI formatter, and smoke-script gates are
+  green at this checkpoint.
+
+Remaining:
+
+- Full format, lint, typecheck, test, build, and diff-whitespace gates.
+
+Next safe step:
+
+- Run `corepack pnpm format:check`; after it passes, continue sequentially through the remaining
+  workspace gates and run the test graph with Windows host process-control permissions.
+
+## 2026-09-14 — Iteration 5 final workspace regression
+
+Status: COMPLETE
+
+Completed:
+
+- Completed the sequential workspace validation from the final 5C detector and smoke-harness
+  source.
+- Exercised the unchanged Windows command timeout/cancellation tests with normal host
+  process-control permissions.
+
+Affected:
+
+- Entire TypeScript workspace and final slice 5C regression surface.
+
+Validated:
+
+- `corepack pnpm format:check`: passed.
+- `corepack pnpm lint`: passed, 24 tasks.
+- `corepack pnpm typecheck`: passed, 24 tasks.
+- `corepack pnpm test`: passed, 24 tasks; project intelligence 37 tests, desktop 38 tests, CLI 22
+  tests, and every remaining package suite passed.
+- `corepack pnpm build`: passed, all 13 packages.
+- `git diff --check`: passed.
+
+Remaining:
+
+- Run locked Rust/native gates and rebuild/smoke the final self-contained Windows engine.
+- Run Tauri development, final NSIS packaging, installed outside-checkout smoke, and final audits.
+
+Next safe step:
+
+- Record the native/SEA start checkpoint, enter the Visual Studio x64 developer environment, and
+  run Rust format/check/Clippy/tests sequentially before rebuilding the SEA.
+
+## 2026-09-14 — Iteration 5 native and SEA validation start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Completed all final TypeScript workspace gates.
+- Confirmed the existing generated sidecar and installer predate the final 5C source and must not
+  be reused as evidence.
+
+Affected:
+
+- Rust/Tauri bridge and final self-contained Windows engine delivery path.
+
+Validated:
+
+- Node.js and Cargo are available; the Visual Studio x64 developer environment supplies the MSVC
+  linker required for native checks.
+
+Remaining:
+
+- Rust format/check/strict-Clippy/tests, a fresh SEA build, and the expanded no-Node/outside-checkout
+  engine smoke.
+
+Next safe step:
+
+- Run `cargo fmt --check`, locked `cargo check`, strict locked Clippy, and locked Rust tests using
+  the x64 Visual Studio developer environment.
+
+## 2026-09-14 — Iteration 5 native and SEA validation
+
+Status: COMPLETE
+
+Completed:
+
+- Completed the locked Rust/native gate in the Visual Studio x64 developer environment.
+- Rebuilt the Windows x64 self-contained engine from the final 5C source and ran its expanded
+  no-Node/outside-checkout matrix.
+- Corrected only smoke expectations for the existing root workspace units exposed by Node and
+  Python sensors; application behavior was unchanged.
+
+Affected:
+
+- Rust/Tauri validation outputs, rebuilt ignored SEA binary, and SEA smoke assertions.
+
+Validated:
+
+- `cargo fmt --check`: passed.
+- Locked `cargo check`: passed.
+- Strict locked Clippy with `-D warnings`: passed.
+- Locked Rust tests: 12 passed; `Cargo.lock` remained unchanged.
+- SEA matrix passed for Vite/Vitest with `index.html` precedence, Jest, static HTML, Python/pytest,
+  npm/pnpm/Yarn workspaces, mixed ambiguity, correlated profile cancellation, no profile writes or
+  command execution, PASS/WARN/BLOCK, history, and protocol framing with Node absent from `PATH`.
+- Rebuilt sidecar: `apps/desktop/src-tauri/binaries/verify-engine-x86_64-pc-windows-msvc.exe`,
+  SHA-256 `9251CD8591D760F68C860AF27C61822444C90FC91DB10346AB7DB02793F8CB5F`.
+- SEA, build bundle, and Rust target paths remain ignored.
+
+Remaining:
+
+- Launch and stop the Tauri development application with the rebuilt sidecar.
+- Build NSIS, run the installed outside-checkout matrix, and complete final documentation/Git
+  audits.
+
+Next safe step:
+
+- Record the Tauri/package start checkpoint, capture pre-launch process state, run Tauri
+  development in the x64 developer environment, and verify clean shutdown before packaging.
+
+## 2026-09-14 — Iteration 5 Tauri and production-package validation start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Completed final TypeScript, Rust, and rebuilt SEA gates.
+
+Affected:
+
+- Native desktop launch, release bundle, NSIS installer, and installed-application smoke path.
+
+Validated:
+
+- The exact rebuilt bundled-engine source is known by SHA-256 and all generated locations remain
+  ignored.
+
+Remaining:
+
+- Tauri development launch/shutdown, NSIS production build, binary hash parity, and installed
+  outside-checkout smoke.
+
+Next safe step:
+
+- Run `tauri dev --no-watch` with GUI permission, verify the app and sidecar launch, then stop it
+  through the same session and confirm no task-owned process or port 1420 listener remains.
+
+## 2026-09-14 — Iteration 5 Tauri development validation
+
+Status: COMPLETE
+
+Completed:
+
+- Launched the Tauri development application with the rebuilt sidecar and automated its real
+  WebView-to-native workflow through a local-only WebView2 debugging port.
+- Exercised the eight-profile matrix, evidence/workspace/ambiguity rendering, `Understand Project`
+  refresh, PASS/WARN/BLOCK, persisted history, and verification cancellation.
+- Generalized the smoke harness's exact sidecar process lookup to the supplied executable basename;
+  this was required because development and installed bundles use different sidecar paths.
+- Stopped the app through its owning terminal session after the successful run.
+
+Affected:
+
+- Tauri development runtime and installed-UI smoke process lookup; no application contract changed.
+
+Validated:
+
+- Real path passed: WebView UI -> Tauri IPC -> Rust bridge -> bundled debug sidecar -> shared core.
+- Repository and runtime-database fingerprints did not change during profile-only refresh; observed
+  command traps did not execute.
+- Cancellation persisted a cancelled BLOCK run and recorded command/engine PIDs were gone.
+- No task-owned process, port 1420 listener, or WebView2 debug listener remained after shutdown.
+- Retained evidence: `C:/Users/Xtreme/AppData/Local/Temp/Local Verifier dev UI smoke ü
+20260914-173000/Workflow/ui-summary.json`.
+
+Remaining:
+
+- Build the final NSIS package and run the installed outside-checkout matrix, including the newly
+  added profile-Stop cycle.
+- Complete final documentation and Git audits.
+
+Next safe step:
+
+- Build the production NSIS bundle from the final source, then verify source/release sidecar hash
+  parity and generated-artifact ignore rules before installation.
+
+## 2026-09-14 — Iteration 5 final NSIS packaging start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Completed Tauri development execution and clean shutdown.
+- Finalized the installed smoke matrix, including a correlated `Stop project scan` cycle that must
+  preserve the prior profile and leave the sidecar stopped.
+
+Affected:
+
+- Release-mode Tauri bundle, NSIS installer, bundled engine, and installed smoke harness.
+
+Validated:
+
+- Smoke-harness syntax, formatting, and lint passed after the profile-cancellation addition.
+
+Remaining:
+
+- Production Tauri/NSIS build, sidecar hash parity, installed outside-checkout smoke, and artifact
+  audit.
+
+Next safe step:
+
+- Run the x64 MSVC `tauri build --bundles nsis` command and retain the resulting artifact paths and
+  hashes.
+
+## 2026-09-14 — Iteration 5 final NSIS package build
+
+Status: COMPLETE
+
+Completed:
+
+- Built the final release application and NSIS installer from the validated 5C source.
+- Verified the release-bundled sidecar is byte-identical to the freshly rebuilt source SEA.
+- Confirmed all generated binaries and installer paths remain ignored.
+
+Affected:
+
+- Ignored release outputs under `apps/desktop/src-tauri/binaries/` and
+  `apps/desktop/src-tauri/target/release/`.
+
+Validated:
+
+- NSIS installer:
+  `apps/desktop/src-tauri/target/release/bundle/nsis/Local Code Verifier_0.1.0_x64-setup.exe`,
+  SHA-256 `F177028CED1CEB0B65CCA0031C88335E40BCE42C933BBF4DDEF994D961825D10`.
+- Release app SHA-256: `7AD0C200E4F510F724488016B6124A0F45CF996E23BFD4599E52EAA7685915FF`.
+- Source and release sidecar SHA-256:
+  `9251CD8591D760F68C860AF27C61822444C90FC91DB10346AB7DB02793F8CB5F`.
+- Tauri emitted its existing bundle-type/updater warning; no updater is included or claimed for
+  this Windows-only unsigned milestone.
+
+Remaining:
+
+- Install to a fresh external Unicode/space path and run the full installed WebView/native/sidecar
+  matrix, then complete final audits.
+
+Next safe step:
+
+- Run `scripts/smoke-installed-windows.ps1` against the exact installer into a retained fresh
+  external evidence directory.
+
+## 2026-09-14 — Iteration 5 installed outside-checkout smoke start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Produced and hash-verified the final NSIS release artifacts.
+
+Affected:
+
+- Fresh external installation, runtime data, fixture repositories, and retained smoke evidence.
+
+Validated:
+
+- The installer and bundled sidecar exist and are ignored; the sidecar matches the rebuilt SEA.
+
+Remaining:
+
+- Execute the installed profile matrix, profile refresh/cancellation, deterministic verification,
+  persistence/restart, Node-independence, and process cleanup checks.
+
+Next safe step:
+
+- Install and smoke the application under a fresh `%TEMP%` directory containing spaces and Unicode,
+  retaining `summary.json`, `ui-summary.json`, and restart evidence.
+
+## 2026-09-14 — Iteration 5 installed-smoke shutdown race diagnosis
+
+Status: IN PROGRESS
+
+Completed:
+
+- Ran the final installer outside the checkout; the SEA matrix, installed UI profile matrix,
+  profile refresh/cancellation, PASS/WARN/BLOCK, persisted verification cancellation, and restart
+  assertions all completed successfully.
+- The outer harness then caught one installed sidecar immediately after restart history rendered.
+- Confirmed the exact caught PID exited naturally before the read-only follow-up process query.
+
+Affected:
+
+- Installed-smoke orchestration only; no production/runtime behavior has been changed.
+
+Validated:
+
+- Evidence is retained at
+  `C:/Users/Xtreme/AppData/Local/Temp/Local Verifier Iteration 5 installed smoke ü
+20260914-171000`.
+- The restart UI can finish its history assertion while automatic repository profiling is still
+  completing, so an immediate zero-delay process check races the bounded sidecar shutdown.
+
+Remaining:
+
+- Add a bounded wait before the existing final zero-sidecar assertion, rerun script validation, and
+  rerun the complete installer smoke in a fresh external directory.
+
+Next safe step:
+
+- Patch only the installed-smoke orchestration to poll the exact installed sidecar for at most 15
+  seconds, retaining the same failure if it does not exit.
+
+## 2026-09-14 — Iteration 5 installed outside-checkout smoke
+
+Status: COMPLETE
+
+Completed:
+
+- Added a bounded 15-second poll before the unchanged final zero-sidecar assertion and reran the
+  complete installer smoke in a fresh external path containing spaces and Unicode.
+- Exercised eight project profiles, `Understand Project` refresh, accepted profile cancellation,
+  deterministic verification, persisted cancellation/history, restart, and process cleanup through
+  the installed WebView, Tauri IPC, Rust bridge, and bundled sidecar.
+
+Affected:
+
+- Installed-smoke orchestration and retained external evidence only; production behavior was not
+  changed by the shutdown-race correction.
+
+Validated:
+
+- Vite/Vitest, Jest, plain static, Python/pytest, npm/pnpm/Yarn workspace, and mixed Node/Python
+  profiles passed with explicit ambiguity and no selected default.
+- Repository and runtime-database fingerprints remained unchanged during profiling; execution traps
+  did not run, Node was absent from the application runtime `PATH`, and no recorded process remained.
+- PASS/WARN/BLOCK, persisted cancelled BLOCK history, and history after app restart passed.
+- Retained evidence: `C:/Users/Xtreme/AppData/Local/Temp/Local Verifier Iteration 5 installed smoke
+ü 20260914-172000/summary.json`, `Installed UI Workflow ü/ui-summary.json`, and
+  `Installed UI Workflow ü/restart-summary.json`.
+
+Remaining:
+
+- Reconcile final TASK-014/package/user documentation and complete the Git scope/hygiene audit.
+
+Next safe step:
+
+- Mark TASK-014 complete only after the documentation, full diff, untracked files, ignored outputs,
+  and staged patch are verified against the validated Iteration 5 scope.
+
+## 2026-09-14 — Iteration 5 final documentation and Git audit start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Completed the full workspace, Rust, SEA, Tauri development, NSIS, and installed-application gates.
+- Recovered the complete slice 5C change set and retained smoke evidence.
+
+Affected:
+
+- TASK-014 status, architecture/package/user documentation, development journal, and final Git
+  staging boundary.
+
+Validated:
+
+- No Iteration 6, schema-v2, planning, AI, smart-action, approval, risk, or generated-test behavior
+  is present in the current implementation scope.
+
+Remaining:
+
+- Correct stale completion wording, run final formatting/lint/whitespace checks, inspect every
+  tracked and untracked change, and review the staged patch.
+
+Next safe step:
+
+- Reconcile the documentation with the proven installed result, then perform the final Git audit and
+  create the authorized durable completion commit only if the scope remains coherent.
+
+## 2026-09-15 — Iteration 5 completion audit
+
+Status: COMPLETE
+
+Completed:
+
+- Reviewed every tracked diff and untracked file in the completed slice 5C boundary.
+- Reconciled TASK-014, architecture, package documentation, the user guide, and packaged-smoke
+  evidence with the validated implementation.
+- Confirmed the pending tree contains only Iteration 5 source, tests, metadata fixtures,
+  documentation, and release-smoke harness changes.
+
+Affected:
+
+- Final slice 5C source/tests/fixtures, profile presentation, SEA/installed smoke tooling, and
+  Iteration 5 documentation.
+
+Validated:
+
+- Final format, lint, typecheck, and `git diff --check` gates passed after documentation updates;
+  the full test/build, Rust, SEA, Tauri, NSIS, and installed-smoke results remain applicable because
+  no runtime source changed afterward.
+- Root `pnpm-lock.yaml` and Rust `Cargo.lock` are unchanged; new lockfiles are metadata-only fixture
+  inputs.
+- Generated SEA, release app, NSIS installer, Rust targets, build outputs, dependencies, databases,
+  logs, and temporary evidence remain ignored and untracked.
+- `v0.1.0` still resolves to `fb1880d7679c886c04520c4493911a0c141a6761`, and no Iteration 6
+  implementation is present.
+
+Remaining:
+
+- Create the authorized durable Iteration 5 completion commit; repository-specific ignore-pattern
+  projection and hard wall-clock preemption remain explicitly outside the delivered profiler
+  boundary.
+
+Next safe step:
+
+- Stage only the audited Iteration 5 files, review the complete cached patch and whitespace, commit
+  as `feat: complete Iteration 5 project intelligence`, confirm a clean tree, and stop.

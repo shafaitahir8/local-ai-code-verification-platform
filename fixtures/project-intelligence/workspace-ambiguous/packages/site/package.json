@@ -1,0 +1,8 @@
+{
+  "name": "@fixture/site",
+  "private": true,
+  "scripts": {
+    "start": "vite",
+    "test": "vitest run"
+  }
+}

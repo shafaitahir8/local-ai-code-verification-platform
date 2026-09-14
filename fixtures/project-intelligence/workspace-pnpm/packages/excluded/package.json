@@ -1,0 +1,7 @@
+{
+  "name": "@fixture/excluded",
+  "private": true,
+  "scripts": {
+    "test": "never-run"
+  }
+}

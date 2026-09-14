@@ -1,0 +1,9 @@
+{
+  "name": "@fixture/web",
+  "private": true,
+  "scripts": {
+    "build": "vite build",
+    "start": "node -e \"require('node:fs').writeFileSync('PROFILE_COMMAND_EXECUTED', 'yes')\"",
+    "test": "vitest run"
+  }
+}

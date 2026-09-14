@@ -25,6 +25,15 @@ export function formatProjectProfile(profile: ProjectProfile): string {
     }
   }
 
+  if (profile.workspaceUnits.length > 0) {
+    lines.push('Detected workspace units:');
+    for (const workspace of profile.workspaceUnits) {
+      lines.push(
+        `  ${workspace.name ?? workspace.id}: ${workspace.path} (evidence: ${workspace.evidenceIds.join(', ')})`,
+      );
+    }
+  }
+
   if (profile.taskCandidates.length > 0) {
     lines.push('Observed task candidates (not executed or approved):');
     for (const task of profile.taskCandidates) {

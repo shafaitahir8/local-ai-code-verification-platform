@@ -238,8 +238,19 @@ describe('Node/Vite/Vitest project profiling', () => {
 
     expect(result.status).toBe('completed');
     if (result.status !== 'completed') throw new Error('Expected a completed profile.');
-    expect(result.profile.evidence).toEqual([
-      expect.objectContaining({ kind: 'path', path: 'tests/main.test.js' }),
+    const observedPathEvidence = result.profile.evidence.filter(
+      ({ kind, path }) => kind === 'path' && path === 'tests/main.test.js',
+    );
+    expect(observedPathEvidence.some(({ id }) => id.startsWith('node.path.javascript.'))).toBe(
+      true,
+    );
+    expect(observedPathEvidence.some(({ id }) => id.startsWith('node.path.test.'))).toBe(true);
+    expect(result.profile.capabilities).toEqual([
+      expect.objectContaining({
+        id: 'language.javascript',
+        kind: 'language',
+        confidence: 'tentative',
+      }),
     ]);
     expect(result.profile.capabilities.map(({ id }) => id)).not.toContain('test-framework.jest');
     expect(result.profile.taskCandidates).toEqual([]);

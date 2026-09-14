@@ -274,18 +274,25 @@ try {
     throw "The installed desktop app exited during restart smoke with code $($guiProcess.ExitCode)."
   }
 
-  $remainingSidecars = @(
-    Get-Process -Name 'verify-engine' -ErrorAction SilentlyContinue |
-      Where-Object {
-        try {
-          $_.Path.StartsWith($installDirectory, [System.StringComparison]::OrdinalIgnoreCase)
-        } catch {
-          $false
+  $sidecarExitDeadline = [System.DateTime]::UtcNow.AddSeconds(15)
+  do {
+    $remainingSidecars = @(
+      Get-Process -Name 'verify-engine' -ErrorAction SilentlyContinue |
+        Where-Object {
+          try {
+            $_.Path.StartsWith($installDirectory, [System.StringComparison]::OrdinalIgnoreCase)
+          } catch {
+            $false
+          }
         }
-      }
-  )
+    )
+    if ($remainingSidecars.Count -eq 0) {
+      break
+    }
+    Start-Sleep -Milliseconds 200
+  } while ([System.DateTime]::UtcNow -lt $sidecarExitDeadline)
   if ($remainingSidecars.Count -gt 0) {
-    throw "Installed verification sidecars remain after terminal results: $($remainingSidecars.Id -join ', ')."
+    throw "Installed verification sidecars remain after bounded restart shutdown: $($remainingSidecars.Id -join ', ')."
   }
 } finally {
   $env:PATH = $previousPath

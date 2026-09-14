@@ -23,9 +23,10 @@ not accept a repository argument. Exit codes are `0` for PASS/WARN, `1` for BLOC
 execution/configuration error, and `3` for interruption. Help and version output exit successfully.
 
 `understand` builds a bounded deterministic `ProjectProfile` from repository metadata. Human output
-shows capabilities, observed task candidates, confidence, and evidence references. JSON output is
-the protocol-equivalent `{ status, profile? }` result. Profiling never executes observed commands,
-writes repository configuration, or creates verification history; Ctrl+C returns exit code 3.
+shows capabilities, workspace units, observed task candidates, confidence, ambiguity, and evidence
+references. JSON output is the protocol-equivalent `{ status, profile? }` result. Profiling never
+executes observed commands, writes repository configuration, or creates verification history;
+Ctrl+C returns exit code 3.
 
 ## Allowed dependencies
 

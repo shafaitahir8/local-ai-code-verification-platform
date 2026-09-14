@@ -1,0 +1,10 @@
+{
+  "name": "yarn-workspace-fixture",
+  "private": true,
+  "packageManager": "yarn@4.9.2",
+  "workspaces": {
+    "packages": [
+      "apps/*"
+    ]
+  }
+}

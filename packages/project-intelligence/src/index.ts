@@ -20,3 +20,5 @@ export {
   DEFAULT_PROJECT_SCAN_LIMITS,
 } from './inventory.js';
 export { NodeProjectSensor } from './sensors/node.js';
+export { PythonProjectSensor } from './sensors/python.js';
+export { WorkspaceProjectSensor } from './sensors/workspaces.js';

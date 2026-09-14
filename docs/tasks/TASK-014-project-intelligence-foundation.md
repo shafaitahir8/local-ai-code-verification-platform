@@ -2,10 +2,9 @@
 
 ## Status
 
-In progress. ADR-009 through ADR-014 are accepted. Slice 5A is implemented and validated across
-core, protocol, CLI, native bridge, and desktop; slice 5B adds validated Jest and plain-static-site
-profiles through those unchanged interfaces, including Vite precedence for root `index.html`.
-TASK-014 remains open for the ordered 5C ecosystem, ambiguity, and regression coverage below.
+Complete. ADR-009 through ADR-014 are accepted. Slices 5A, 5B, and 5C are implemented and
+validated. The final workspace, Rust, self-contained-engine, Tauri development, NSIS packaging, and
+installed outside-checkout gates passed on 2026-09-14. Iteration 6 has not started.
 
 ## Goal
 
@@ -85,7 +84,7 @@ is schema-validated at the coordinator boundary before it can enter a profile.
 The coordinator owns inventory construction, budgets, cancellation checks, merge/deduplication,
 confidence enforcement, and deterministic sorting. A failed sensor adds a scoped warning while
 independent sensors continue; a cancelled operation stops all further work. The configuration
-package alone owns the legacy `ProjectDiscovery` compatibility projection.
+package alone owns the legacy `ProjectDiscovery` compatibility behavior.
 
 Implementation ownership is fixed for this task:
 
@@ -93,9 +92,9 @@ Implementation ownership is fixed for this task:
 - `@verify/core` owns `ProjectProfilerPort` and `profileProject` orchestration.
 - new `@verify/project-intelligence` owns the bounded inventory, sensor contract, coordinator,
   metadata reader, and initial sensor modules; it depends inward on domain only.
-- `@verify/config` may depend on project intelligence and owns the mapping from `ProjectProfile` to
-  its existing `ProjectDiscovery` compatibility result so public version-1 discovery/init behavior
-  stays unchanged; project intelligence does not depend on config.
+- `@verify/config` retains its isolated `ProjectDiscovery` and configuration-suggestion path so
+  public version-1 discovery/init behavior stays unchanged. It does not consume `ProjectProfile` in
+  Iteration 5, and project intelligence does not depend on config.
 - CLI and desktop composition roots construct and inject the profiler. React and Rust contain no
   detection or merge rules.
 
@@ -110,14 +109,16 @@ The initial scan uses these centrally declared defaults:
 - at most 50,000 inventory entries;
 - at most 1 MiB for any metadata file read;
 - at most 16 MiB of metadata content in aggregate;
-- at most 10 seconds elapsed time.
+- a 10-second cooperative elapsed-time budget.
 
 It never descends into `.git`, `node_modules`, `target`, `dist`, `build`, `coverage`, `.turbo`,
-`.next`, `.venv`, `venv`, or `__pycache__`; it also honors repository ignore information where the
-existing Git boundary can supply it safely. Directory links are not followed. Reaching a budget
-returns a completed but `partial` profile with the reached limit and warning. Cancellation returns a
-typed `cancelled` terminal result with no partial profile; the desktop retains the last completed
-profile, if any, and marks only the refresh as cancelled.
+`.next`, `.venv`, `venv`, or `__pycache__`. Directory links are not followed. Repository-specific
+ignore patterns are not projected into the profiler in Iteration 5; adding them requires a bounded,
+read-only boundary rather than direct Git execution by a sensor. The elapsed limit is enforced at
+inventory, metadata-read, and sensor boundaries, and built-in sensors cooperate with the supplied
+`AbortSignal`. Reaching a budget returns a completed but `partial` profile with the reached limit and
+warning. Cancellation returns a typed `cancelled` terminal result with no partial profile; the
+desktop retains the last completed profile, if any, and marks only the refresh as cancelled.
 
 Iteration 5 adds `operation.cancel` and uses the existing correlated acknowledgement rules. The
 first accepted cancel wins; unknown, repeated, and post-terminal requests return `accepted: false`.
@@ -126,7 +127,7 @@ The original `project.profile` request emits its own cancelled terminal result. 
 
 ## Supported ecosystems and delivery slices
 
-Iteration 5 is completed in three ordered internal slices without changing later roadmap boundaries:
+Iteration 5 was completed in three ordered internal slices without changing later roadmap boundaries:
 
 1. **5A — first vertical slice:** single-root Node/JavaScript/TypeScript, npm/pnpm/Yarn lockfile and
    declaration evidence, Vite, Vitest, and declared root scripts.
@@ -163,7 +164,7 @@ direct evidence exists; executable launch behavior remains Iteration 8 work.
   behavior unchanged.
 
 The new profile does not invent npm when `package.json` has neither a package-manager declaration nor
-a lockfile. The isolated `ProjectDiscovery` compatibility projection preserves v0.1.0's existing npm
+a lockfile. The isolated `ProjectDiscovery` compatibility path preserves v0.1.0's existing npm
 default and configuration suggestions so legacy `discover`/`init` behavior does not change; that
 legacy default cannot feed the new profile or future smart-plan approval.
 
@@ -176,7 +177,7 @@ legacy default cannot feed the new profile or future smart-plan approval.
   - declared scripts and workspace/monorepo structure;
   - Vitest, Jest, pytest, build, lint, and typecheck signals;
   - existing tests/configuration and evidence-backed launch candidates.
-- Compatibility projection for the current `project.discover` result.
+- Compatibility preservation for the current `project.discover` result.
 - The core, additive protocol, CLI, and desktop exposure defined above.
 - Bounded automatic deterministic profiling when a repository opens.
 - An `Understand Project` desktop action and evidence-first profile view.
@@ -257,8 +258,6 @@ smoke before declaring the iteration complete.
 
 ## Next safe step
 
-After making slice 5B durable when authorized, implement only slice 5C: add fixture-driven Python
-packaging and pytest evidence, declared npm/pnpm/Yarn workspace structure, mixed-project coverage,
-and explicit ambiguity for multiple credible workspace/test/run targets. Reuse the existing
-profile and interface contracts; do not choose a default target or add execution, schema-v2,
-Iteration 6 planning, or Iteration 7 AI behavior.
+Commit the validated Iteration 5 changes as one durable checkpoint, then stop. Begin Iteration 6 only
+under a separate authorized task; do not fold planning, schema-v2, approval, or AI behavior into this
+completed project-intelligence milestone.

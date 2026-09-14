@@ -209,6 +209,22 @@ export function ProjectOverview({
             )}
           </div>
 
+          {profile.workspaceUnits.length > 0 ? (
+            <div className="profile-section">
+              <h3>Detected workspaces</h3>
+              <ul className="profile-capabilities" aria-label="Detected workspace units">
+                {profile.workspaceUnits.map((workspace) => (
+                  <li key={workspace.id}>
+                    <div>
+                      <strong>{workspace.name ?? workspace.id}</strong>
+                      <span>{workspace.path}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           <div className="profile-section">
             <h3>Observed command candidates</h3>
             {profile.taskCandidates.length > 0 ? (

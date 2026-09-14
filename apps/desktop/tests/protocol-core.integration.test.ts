@@ -178,6 +178,12 @@ describe('desktop/core equivalence', () => {
     ['Node/Vite/Vitest', 'project-intelligence/node-vite-vitest'],
     ['Node/Jest', 'project-intelligence/node-jest'],
     ['plain static site', 'project-intelligence/plain-static'],
+    ['Python/pytest', 'project-intelligence/python-pytest'],
+    ['npm workspace', 'project-intelligence/workspace-npm'],
+    ['pnpm workspace', 'project-intelligence/workspace-pnpm'],
+    ['Yarn workspace', 'project-intelligence/workspace-yarn'],
+    ['mixed Node/Python', 'project-intelligence/mixed-node-python'],
+    ['ambiguous workspace', 'project-intelligence/workspace-ambiguous'],
   ])(
     'returns the same read-only %s project profile through GUI protocol and CLI JSON paths',
     async (_profileKind, fixture) => {

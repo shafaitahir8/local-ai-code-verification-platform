@@ -1,0 +1,8 @@
+{
+  "name": "@fixture/site",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "test": "jest --runInBand"
+  }
+}

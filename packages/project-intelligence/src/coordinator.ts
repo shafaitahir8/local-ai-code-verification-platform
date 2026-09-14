@@ -33,6 +33,8 @@ import {
   DEFAULT_PROJECT_SCAN_LIMITS,
 } from './inventory.js';
 import { NodeProjectSensor } from './sensors/node.js';
+import { PythonProjectSensor } from './sensors/python.js';
+import { WorkspaceProjectSensor } from './sensors/workspaces.js';
 import { compareText } from './ordering.js';
 
 function compareById(left: { readonly id: string }, right: { readonly id: string }): number {
@@ -45,6 +47,18 @@ function uniqueById<T extends { readonly id: string }>(items: readonly T[], labe
     if (item.id.trim().length === 0) throw new Error(`${label} contains an empty ID.`);
     if (result.has(item.id)) throw new Error(`${label} contains duplicate ID ${item.id}.`);
     result.set(item.id, item);
+  }
+  return [...result.values()];
+}
+
+function uniqueAmbiguities(
+  items: readonly ProjectProfileAmbiguity[],
+  label: string,
+): ProjectProfileAmbiguity[] {
+  const result = new Map<string, ProjectProfileAmbiguity>();
+  for (const item of items) {
+    if (result.has(item.code)) throw new Error(`${label} contains duplicate code ${item.code}.`);
+    result.set(item.code, item);
   }
   return [...result.values()];
 }
@@ -157,11 +171,22 @@ function validateSensorResult(
       throw new Error(`Task ${item.id} references unknown workspace ${item.workspaceId}.`);
     }
   }
-  for (const ambiguity of result.ambiguities) {
+  const candidateIds = new Set([
+    ...capabilities.map((item) => item.id),
+    ...workspaceUnits.map((item) => item.id),
+    ...taskCandidates.map((item) => item.id),
+  ]);
+  const ambiguities = uniqueAmbiguities(result.ambiguities, `Sensor ${sensorId} ambiguities`);
+  for (const ambiguity of ambiguities) {
     assertNonEmpty(ambiguity.code, 'Ambiguity code');
     assertNonEmpty(ambiguity.message, `Ambiguity ${ambiguity.code} message`);
     if (ambiguity.candidateIds.length === 0) {
       throw new Error(`Ambiguity ${ambiguity.code} has no candidates.`);
+    }
+    for (const candidateId of ambiguity.candidateIds) {
+      if (!candidateIds.has(candidateId)) {
+        throw new Error(`Ambiguity ${ambiguity.code} references unknown candidate ${candidateId}.`);
+      }
     }
     requireEvidence(`Ambiguity ${ambiguity.code}`, null, ambiguity.evidenceIds);
   }
@@ -185,9 +210,55 @@ function validateSensorResult(
     workspaceUnits,
     taskCandidates,
     evidence,
-    ambiguities: result.ambiguities,
+    ambiguities,
     warnings: result.warnings,
   };
+}
+
+function targetAmbiguity(
+  code: string,
+  message: string,
+  candidates: readonly { readonly id: string; readonly evidenceIds: readonly string[] }[],
+): ProjectProfileAmbiguity | null {
+  if (candidates.length < 2) return null;
+  return {
+    code,
+    message,
+    candidateIds: candidates.map((candidate) => candidate.id).sort(compareText),
+    evidenceIds: [...new Set(candidates.flatMap((candidate) => candidate.evidenceIds))].sort(
+      compareText,
+    ),
+  };
+}
+
+function deriveTargetAmbiguities(
+  capabilities: ReadonlyMap<string, ProjectCapability>,
+  taskCandidates: ReadonlyMap<string, ProjectTaskCandidate>,
+): ProjectProfileAmbiguity[] {
+  const testFrameworks = [...capabilities.values()].filter(
+    (capability) => capability.kind === 'test-framework',
+  );
+  const testTasks = [...taskCandidates.values()].filter((task) => task.kind === 'test');
+  const runTasks = [...taskCandidates.values()].filter(
+    (task) => task.kind === 'run' || task.kind === 'preview',
+  );
+  return [
+    targetAmbiguity(
+      'MULTIPLE_TEST_FRAMEWORKS',
+      'Multiple evidence-backed test frameworks are present; no default framework was selected.',
+      testFrameworks,
+    ),
+    targetAmbiguity(
+      'MULTIPLE_TEST_TARGETS',
+      'Multiple evidence-backed test commands are present; no default test target was selected.',
+      testTasks,
+    ),
+    targetAmbiguity(
+      'MULTIPLE_RUN_TARGETS',
+      'Multiple evidence-backed run or preview commands are present; no default launch target was selected.',
+      runTasks,
+    ),
+  ].filter((ambiguity): ambiguity is ProjectProfileAmbiguity => ambiguity !== null);
 }
 
 function mergeUnique<T extends { readonly id: string }>(
@@ -234,7 +305,11 @@ export class FileSystemProjectProfiler implements ProjectProfiler {
   readonly #generatedAt: () => Date;
 
   public constructor(options: ProjectProfilerOptions = {}) {
-    this.#sensors = options.sensors ?? [new NodeProjectSensor()];
+    this.#sensors = options.sensors ?? [
+      new NodeProjectSensor(),
+      new PythonProjectSensor(),
+      new WorkspaceProjectSensor(),
+    ];
     this.#limits = { ...DEFAULT_PROJECT_SCAN_LIMITS, ...options.limits };
     for (const [name, value] of Object.entries(this.#limits)) {
       if (!Number.isFinite(value) || value < 0) {
@@ -275,7 +350,7 @@ export class FileSystemProjectProfiler implements ProjectProfiler {
       const workspaceUnits = new Map<string, ProjectWorkspaceUnit>();
       const taskCandidates = new Map<string, ProjectTaskCandidate>();
       const evidence = new Map<string, ProjectEvidence>();
-      const ambiguities: ProjectProfileAmbiguity[] = [];
+      const ambiguities = new Map<string, ProjectProfileAmbiguity>();
       const warnings: ProjectProfileWarning[] = built.state.warnings;
       let displayName: string | undefined;
 
@@ -307,11 +382,16 @@ export class FileSystemProjectProfiler implements ProjectProfiler {
           assertMergeIsAtomic(capabilities, result.capabilities);
           assertMergeIsAtomic(workspaceUnits, result.workspaceUnits);
           assertMergeIsAtomic(taskCandidates, result.taskCandidates);
+          for (const ambiguity of result.ambiguities) {
+            if (ambiguities.has(ambiguity.code)) {
+              throw new Error(`Duplicate project-profile ambiguity code ${ambiguity.code}.`);
+            }
+          }
           mergeUnique(evidence, result.evidence);
           mergeUnique(capabilities, result.capabilities);
           mergeUnique(workspaceUnits, result.workspaceUnits);
           mergeUnique(taskCandidates, result.taskCandidates);
-          ambiguities.push(...result.ambiguities);
+          for (const ambiguity of result.ambiguities) ambiguities.set(ambiguity.code, ambiguity);
           warnings.push(...result.warnings);
           displayName ??= result.displayName;
         } catch (error) {
@@ -354,6 +434,23 @@ export class FileSystemProjectProfiler implements ProjectProfiler {
           affectsCompleteness: true,
         });
       }
+      for (const derived of deriveTargetAmbiguities(capabilities, taskCandidates)) {
+        const existing = ambiguities.get(derived.code);
+        ambiguities.set(
+          derived.code,
+          existing === undefined
+            ? derived
+            : {
+                ...derived,
+                candidateIds: [
+                  ...new Set([...existing.candidateIds, ...derived.candidateIds]),
+                ].sort(compareText),
+                evidenceIds: [...new Set([...existing.evidenceIds, ...derived.evidenceIds])].sort(
+                  compareText,
+                ),
+              },
+        );
+      }
       const profile: ProjectProfile = {
         profileVersion: PROJECT_PROFILE_VERSION,
         repositoryRoot: built.repositoryRoot,
@@ -376,7 +473,9 @@ export class FileSystemProjectProfiler implements ProjectProfiler {
         workspaceUnits: [...workspaceUnits.values()].sort(compareById),
         taskCandidates: [...taskCandidates.values()].sort(compareById),
         evidence: [...evidence.values()].sort(compareById),
-        ambiguities: ambiguities.sort((left, right) => compareText(left.code, right.code)),
+        ambiguities: [...ambiguities.values()].sort((left, right) =>
+          compareText(left.code, right.code),
+        ),
         warnings: warnings.sort((left, right) => {
           const code = compareText(left.code, right.code);
           return code === 0 ? compareText(left.message, right.message) : code;
