@@ -111,6 +111,7 @@ function protocolTransport(database: string): EngineTransport {
 
 type VerificationRun = ProtocolResultMap['verification.run'];
 type ProjectProfileResult = ProtocolResultMap['project.profile'];
+type VerificationPlanResult = ProtocolResultMap['verification.plan'];
 
 function deterministicOutcome(run: VerificationRun) {
   return {
@@ -147,6 +148,25 @@ function deterministicProfile(result: ProjectProfileResult) {
       ...result.profile,
       generatedAt: '<generated>',
       scan: { ...result.profile.scan, elapsedMs: 0 },
+    },
+  };
+}
+
+function deterministicPlanPreview(result: VerificationPlanResult) {
+  if (result.status === 'cancelled') return result;
+  return {
+    ...result,
+    preview: {
+      ...result.preview,
+      profile: {
+        ...result.preview.profile,
+        generatedAt: '<generated>',
+        scan: { ...result.preview.profile.scan, elapsedMs: 0 },
+      },
+      plans: {
+        quick: { ...result.preview.plans.quick, profileGeneratedAt: '<generated>' },
+        full: { ...result.preview.plans.full, profileGeneratedAt: '<generated>' },
+      },
     },
   };
 }
@@ -204,4 +224,21 @@ describe('desktop/core equivalence', () => {
     },
     20_000,
   );
+
+  it('returns the same read-only plan preview through GUI protocol and CLI JSON paths', async () => {
+    const { repository, database } = await createFixture('project-intelligence/node-vite-vitest');
+    const client = new ProtocolEngineClient(protocolTransport(database), {
+      createRequestId: () => 'desktop-plan-equivalence',
+    });
+
+    const guiResult = await client.request('verification.plan', { repository });
+    const cliResult = await spawnCli(['plan', repository, '--json'], database);
+
+    expect(cliResult.code).toBe(0);
+    expect(cliResult.stderr).toBe('');
+    expect(cliResult.stdout.trim().split(/\r?\n/u)).toHaveLength(1);
+    const cliPreview = JSON.parse(cliResult.stdout) as VerificationPlanResult;
+    expect(deterministicPlanPreview(guiResult)).toStrictEqual(deterministicPlanPreview(cliPreview));
+    await expect(access(database)).rejects.toMatchObject({ code: 'ENOENT' });
+  }, 20_000);
 });

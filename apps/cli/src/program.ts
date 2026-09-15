@@ -11,6 +11,7 @@ import {
   formatInspection,
   formatProjectProfile,
   formatRun,
+  formatVerificationPlanPreview,
 } from './format.js';
 import { serveProtocol } from './protocol-server.js';
 
@@ -140,6 +141,33 @@ export function createProgram(context: CliContext): Command {
           io.writeOut(line(formatProjectProfile(result.profile)));
         } else {
           io.writeError(line('Project understanding cancelled.'));
+        }
+        if (result.status === 'cancelled') io.setExitCode(EXIT_CODES.interrupted);
+      } finally {
+        process.removeListener('SIGINT', handleInterrupt);
+      }
+    });
+
+  program
+    .command('plan')
+    .description('Preview deterministic Quick and Full verification plans without executing them')
+    .argument('[repository]', 'path inside the Git repository', '.')
+    .option('--json', 'emit the protocol-equivalent plan preview result as JSON')
+    .action(async (repository: string, options: JsonOption) => {
+      const controller = new AbortController();
+      const handleInterrupt = (): void => controller.abort();
+      process.once('SIGINT', handleInterrupt);
+      try {
+        const result = await application.previewVerificationPlans({
+          repository,
+          signal: controller.signal,
+          ...(options.json === true ? {} : { onProgress: profileProgressWriter(io) }),
+        });
+        if (options.json === true) writeJson(io, result);
+        else if (result.status === 'completed') {
+          io.writeOut(line(formatVerificationPlanPreview(result.preview)));
+        } else {
+          io.writeError(line('Verification plan preview cancelled.'));
         }
         if (result.status === 'cancelled') io.setExitCode(EXIT_CODES.interrupted);
       } finally {

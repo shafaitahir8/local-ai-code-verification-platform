@@ -29,6 +29,10 @@ type ProjectProfile = Extract<
   ProtocolResultMap['project.profile'],
   { status: 'completed' }
 >['profile'];
+type VerificationPlanPreview = Extract<
+  ProtocolResultMap['verification.plan'],
+  { status: 'completed' }
+>['preview'];
 
 const BASE_TIME = Date.parse('2026-09-07T14:20:00.000Z');
 
@@ -83,6 +87,13 @@ function projectProfile(
       kind: 'config' as const,
       path: 'vitest.config.ts',
       summary: 'A Vitest configuration file is present.',
+    },
+    {
+      id: 'node:eslint',
+      sensorId: 'node',
+      kind: 'config' as const,
+      path: 'eslint.config.js',
+      summary: 'An ESLint configuration file is present.',
     },
     {
       id: 'node:test-path',
@@ -171,6 +182,13 @@ function projectProfile(
         evidenceIds: ['node:vitest', 'node:test-path'],
       },
       {
+        id: 'linter.eslint',
+        kind: 'linter',
+        name: 'ESLint',
+        confidence: 'confirmed',
+        evidenceIds: ['node:eslint'],
+      },
+      {
         id: 'typechecker.typescript',
         kind: 'typechecker',
         name: 'TypeScript',
@@ -224,6 +242,73 @@ function projectProfile(
             },
           ]
         : [],
+  };
+}
+
+function verificationPlanPreview(profile: ProjectProfile): VerificationPlanPreview {
+  const capabilityByKind = {
+    test: 'test-framework.vitest',
+    lint: 'linter.eslint',
+    typecheck: 'typechecker.typescript',
+    build: 'build-tool.vite',
+  } as const;
+  const candidates = profile.taskCandidates.filter(
+    (candidate) => candidate.kind in capabilityByKind,
+  );
+  const supported = profile.completeness === 'complete' && profile.ambiguities.length === 0;
+  const createDecision = (
+    candidate: (typeof candidates)[number],
+    mode: 'quick' | 'full',
+    selected: boolean,
+  ) => ({
+    taskCandidateId: candidate.id,
+    kind: candidate.kind as keyof typeof capabilityByKind,
+    label: candidate.label,
+    command: candidate.command,
+    workingDirectory: candidate.workingDirectory,
+    ...(candidate.workspaceId === undefined ? {} : { workspaceId: candidate.workspaceId }),
+    confidence: candidate.confidence,
+    capabilityIds: [capabilityByKind[candidate.kind as keyof typeof capabilityByKind]],
+    evidenceIds: candidate.evidenceIds,
+    reason: selected
+      ? `Selected for the ${mode} plan because the profile contains one confirmed root ${candidate.kind} task with matching deterministic capability evidence.`
+      : supported
+        ? `Skipped in Quick mode; the ${candidate.kind} task is reserved for the Full plan.`
+        : 'Skipped because slice 6A requires a complete, unambiguous, single-root Node/Vite/Vitest profile.',
+  });
+  const createPlanFields = (mode: 'quick' | 'full') => {
+    const selectedKinds = mode === 'quick' ? new Set(['test', 'lint']) : undefined;
+    const selected = candidates.filter(
+      (candidate) =>
+        supported && (selectedKinds === undefined || selectedKinds.has(candidate.kind)),
+    );
+    const skipped = candidates.filter(
+      (candidate) =>
+        !supported || (selectedKinds !== undefined && !selectedKinds.has(candidate.kind)),
+    );
+
+    return {
+      planVersion: 1 as const,
+      status: supported ? ('ready' as const) : ('unavailable' as const),
+      statusReason: supported
+        ? `${selected.length} evidence-backed checks selected for the ${mode} preview.`
+        : 'No checks were selected because slice 6A requires a complete, unambiguous, single-root Node/Vite/Vitest profile.',
+      repositoryRoot: profile.repositoryRoot,
+      profileVersion: profile.profileVersion,
+      profileGeneratedAt: profile.generatedAt,
+      profileCompleteness: profile.completeness,
+      recommendationSource: 'deterministic-project-profile' as const,
+      selectedChecks: selected.map((candidate) => createDecision(candidate, mode, true)),
+      skippedChecks: skipped.map((candidate) => createDecision(candidate, mode, false)),
+    };
+  };
+
+  return {
+    profile,
+    plans: {
+      quick: { ...createPlanFields('quick'), mode: 'quick' },
+      full: { ...createPlanFields('full'), mode: 'full' },
+    },
   };
 }
 
@@ -476,7 +561,11 @@ export class MockEngineClient implements EngineClient {
     params: ProtocolParamsMap[Method],
     options: EngineRequestOptions = {},
   ): Promise<ProtocolResultMap[Method]> {
-    if (method !== 'project.profile' && method !== 'verification.run') {
+    if (
+      method !== 'project.profile' &&
+      method !== 'verification.plan' &&
+      method !== 'verification.run'
+    ) {
       await pause(this.#latencyMs, options.signal);
     }
 
@@ -582,6 +671,66 @@ export class MockEngineClient implements EngineClient {
         return {
           status: 'completed',
           profile: projectProfile(repository, this.#profileCompleteness, this.#profileAmbiguous),
+        } as ProtocolResultMap[Method];
+      }
+
+      case 'verification.plan': {
+        const progress = [
+          {
+            phase: 'inventory' as const,
+            message: 'Scanning repository metadata.',
+            entriesScanned: 9,
+            bytesRead: 0,
+            sensorsCompleted: 0,
+            sensorCount: 1,
+          },
+          {
+            phase: 'sensors' as const,
+            message: 'Inspecting Node project evidence.',
+            entriesScanned: 18,
+            bytesRead: 2_048,
+            sensorsCompleted: 0,
+            sensorCount: 1,
+          },
+          {
+            phase: 'finalizing' as const,
+            message: 'Finalizing the deterministic project profile.',
+            entriesScanned: 18,
+            bytesRead: 2_048,
+            sensorsCompleted: 1,
+            sensorCount: 1,
+          },
+        ];
+
+        for (const data of progress) {
+          if (options.signal?.aborted) {
+            return { status: 'cancelled' } as ProtocolResultMap[Method];
+          }
+          options.onEvent?.({
+            protocolVersion: 1,
+            id: 'mock-plan-event',
+            event: 'profile.progress',
+            data,
+          });
+          try {
+            await pause(this.#profileLatencyMs, options.signal);
+          } catch (error) {
+            if (error instanceof EngineRequestError && error.code === 'INTERRUPTED') {
+              if (this.#rejectProfileCancellation) throw error;
+              return { status: 'cancelled' } as ProtocolResultMap[Method];
+            }
+            throw error;
+          }
+        }
+
+        const profile = projectProfile(
+          repository,
+          this.#profileCompleteness,
+          this.#profileAmbiguous,
+        );
+        return {
+          status: 'completed',
+          preview: verificationPlanPreview(profile),
         } as ProtocolResultMap[Method];
       }
 

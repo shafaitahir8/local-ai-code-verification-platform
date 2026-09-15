@@ -18,6 +18,10 @@ import type {
   RepositoryChange,
   VerificationCheck,
   VerificationCheckResult,
+  VerificationPlan,
+  VerificationPlanCheckDecision,
+  VerificationPlanPreview,
+  VerificationPlanPreviewResult,
   VerificationRun,
 } from '@verify/domain';
 import { z } from 'zod';
@@ -215,6 +219,206 @@ export const projectProfileResultSchema: z.ZodType<ProjectProfileResult> = z.dis
     z.strictObject({ status: z.literal('cancelled') }),
   ],
 );
+
+export const verificationPlanCheckDecisionSchema: z.ZodType<VerificationPlanCheckDecision> =
+  z.strictObject({
+    taskCandidateId: z.string().min(1),
+    kind: z.enum(['test', 'lint', 'typecheck', 'build']),
+    label: z.string().min(1),
+    command: z.string().min(1),
+    workingDirectory: z.string().min(1),
+    workspaceId: z.string().min(1).optional(),
+    confidence: z.enum(['confirmed', 'strong', 'tentative']),
+    capabilityIds: z.array(z.string().min(1)),
+    evidenceIds: z.array(z.string().min(1)),
+    reason: z.string().min(1),
+  });
+
+const verificationPlanObjectSchema = z.strictObject({
+  planVersion: z.literal(1),
+  mode: z.enum(['quick', 'full']),
+  status: z.enum(['ready', 'unavailable']),
+  statusReason: z.string().min(1),
+  repositoryRoot: z.string().min(1),
+  profileVersion: z.literal(1),
+  profileGeneratedAt: z.iso.datetime(),
+  profileCompleteness: z.enum(['complete', 'partial']),
+  recommendationSource: z.literal('deterministic-project-profile'),
+  selectedChecks: z.array(verificationPlanCheckDecisionSchema),
+  skippedChecks: z.array(verificationPlanCheckDecisionSchema),
+});
+
+export const verificationPlanSchema: z.ZodType<VerificationPlan> = verificationPlanObjectSchema;
+
+const quickVerificationPlanSchema: z.ZodType<VerificationPlan<'quick'>> =
+  verificationPlanObjectSchema.extend({ mode: z.literal('quick') });
+const fullVerificationPlanSchema: z.ZodType<VerificationPlan<'full'>> =
+  verificationPlanObjectSchema.extend({ mode: z.literal('full') });
+
+const verificationPlanPreviewObjectSchema = z.strictObject({
+  profile: projectProfileSchema,
+  plans: z.strictObject({
+    quick: quickVerificationPlanSchema,
+    full: fullVerificationPlanSchema,
+  }),
+});
+
+export const verificationPlanPreviewSchema: z.ZodType<VerificationPlanPreview> =
+  verificationPlanPreviewObjectSchema.superRefine((preview, context) => {
+    const profile = preview.profile;
+    for (const [field, items] of [
+      ['evidence', profile.evidence],
+      ['capabilities', profile.capabilities],
+      ['workspaceUnits', profile.workspaceUnits],
+      ['taskCandidates', profile.taskCandidates],
+    ] as const) {
+      const ids = new Set<string>();
+      for (const [index, item] of items.entries()) {
+        if (ids.has(item.id)) {
+          context.addIssue({
+            code: 'custom',
+            path: ['profile', field, index, 'id'],
+            message: `Project profile ${field} contains duplicate ID ${item.id}.`,
+          });
+        }
+        ids.add(item.id);
+      }
+    }
+
+    const evidenceIds = new Set(profile.evidence.map((item) => item.id));
+    const candidates = new Map(profile.taskCandidates.map((item) => [item.id, item]));
+    const capabilities = new Map(profile.capabilities.map((item) => [item.id, item]));
+    const capabilityKindByCheck = {
+      test: 'test-framework',
+      lint: 'linter',
+      typecheck: 'typechecker',
+      build: 'build-tool',
+    } as const;
+
+    for (const mode of ['quick', 'full'] as const) {
+      const plan = preview.plans[mode];
+      for (const [field, expected] of [
+        ['repositoryRoot', preview.profile.repositoryRoot],
+        ['profileVersion', preview.profile.profileVersion],
+        ['profileGeneratedAt', preview.profile.generatedAt],
+        ['profileCompleteness', preview.profile.completeness],
+      ] as const) {
+        if (plan[field] === expected) continue;
+        context.addIssue({
+          code: 'custom',
+          path: ['plans', mode, field],
+          message: `${mode} plan ${field} must match the embedded project profile.`,
+        });
+      }
+
+      const seenCandidateIds = new Set<string>();
+      for (const group of ['selectedChecks', 'skippedChecks'] as const) {
+        for (const [index, decision] of plan[group].entries()) {
+          const path = ['plans', mode, group, index] as const;
+          if (seenCandidateIds.has(decision.taskCandidateId)) {
+            context.addIssue({
+              code: 'custom',
+              path: [...path, 'taskCandidateId'],
+              message: 'A task candidate may appear only once in each plan.',
+            });
+          }
+          seenCandidateIds.add(decision.taskCandidateId);
+
+          const candidate = candidates.get(decision.taskCandidateId);
+          if (candidate === undefined) {
+            context.addIssue({
+              code: 'custom',
+              path: [...path, 'taskCandidateId'],
+              message: 'Plan decision must reference an observed project task candidate.',
+            });
+          } else {
+            for (const field of [
+              'kind',
+              'label',
+              'command',
+              'workingDirectory',
+              'workspaceId',
+              'confidence',
+            ] as const) {
+              if (decision[field] === candidate[field]) continue;
+              context.addIssue({
+                code: 'custom',
+                path: [...path, field],
+                message: `Plan decision ${field} must match its observed task candidate.`,
+              });
+            }
+            if (
+              group === 'selectedChecks' &&
+              candidate.evidenceIds.some((id) => !evidenceIds.has(id))
+            ) {
+              context.addIssue({
+                code: 'custom',
+                path: [...path, 'taskCandidateId'],
+                message: 'A selected check requires all observed task evidence to resolve.',
+              });
+            }
+          }
+
+          if (decision.evidenceIds.length === 0) {
+            context.addIssue({
+              code: 'custom',
+              path: [...path, 'evidenceIds'],
+              message: 'Plan decision must retain at least one resolvable source evidence ID.',
+            });
+          }
+          const seenDecisionEvidenceIds = new Set<string>();
+          for (const [evidenceIndex, id] of decision.evidenceIds.entries()) {
+            if (
+              seenDecisionEvidenceIds.has(id) ||
+              !evidenceIds.has(id) ||
+              (candidate !== undefined && !candidate.evidenceIds.includes(id))
+            ) {
+              context.addIssue({
+                code: 'custom',
+                path: [...path, 'evidenceIds', evidenceIndex],
+                message: 'Plan evidence ID must uniquely resolve to evidence on its source task.',
+              });
+            }
+            seenDecisionEvidenceIds.add(id);
+          }
+
+          const seenCapabilityIds = new Set<string>();
+          for (const [capabilityIndex, id] of decision.capabilityIds.entries()) {
+            const capability = capabilities.get(id);
+            if (
+              seenCapabilityIds.has(id) ||
+              capability === undefined ||
+              capability.kind !== capabilityKindByCheck[decision.kind] ||
+              capability.confidence !== 'confirmed' ||
+              capability.evidenceIds.length === 0 ||
+              capability.evidenceIds.some((item) => !evidenceIds.has(item))
+            ) {
+              context.addIssue({
+                code: 'custom',
+                path: [...path, 'capabilityIds', capabilityIndex],
+                message:
+                  'Plan capability ID must uniquely resolve to a confirmed matching capability with valid evidence.',
+              });
+            }
+            seenCapabilityIds.add(id);
+          }
+          if (group === 'selectedChecks' && decision.capabilityIds.length === 0) {
+            context.addIssue({
+              code: 'custom',
+              path: [...path, 'capabilityIds'],
+              message: 'A selected check requires confirmed matching capability evidence.',
+            });
+          }
+        }
+      }
+    }
+  });
+
+export const verificationPlanPreviewResultSchema: z.ZodType<VerificationPlanPreviewResult> =
+  z.discriminatedUnion('status', [
+    z.strictObject({ status: z.literal('completed'), preview: verificationPlanPreviewSchema }),
+    z.strictObject({ status: z.literal('cancelled') }),
+  ]);
 
 export const verificationCheckSchema: z.ZodType<VerificationCheck> = z.strictObject({
   id: z.string().min(1),

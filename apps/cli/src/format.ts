@@ -3,8 +3,58 @@ import type {
   ProjectProfile,
   RepositoryChange,
   VerificationCheckResult,
+  VerificationPlan,
+  VerificationPlanCheckDecision,
+  VerificationPlanPreview,
   VerificationRun,
 } from '@verify/domain';
+
+function formatPlanDecision(decision: VerificationPlanCheckDecision): string[] {
+  const lines = [
+    `  ${decision.kind}: ${decision.label} — ${decision.command}`,
+    `    Reason: ${decision.reason}`,
+    `    Source: task ${decision.taskCandidateId}; capabilities: ${decision.capabilityIds.join(', ') || 'none'}`,
+    `    Evidence: ${decision.evidenceIds.join(', ') || 'none'}`,
+  ];
+  if (decision.workingDirectory !== '.') {
+    lines.push(`    Working directory: ${decision.workingDirectory}`);
+  }
+  return lines;
+}
+
+function formatPlan(plan: VerificationPlan): string[] {
+  const lines = [
+    `${plan.mode === 'quick' ? 'Quick' : 'Full'} plan: ${plan.status.toUpperCase()}`,
+    `  ${plan.statusReason}`,
+  ];
+
+  lines.push('Selected checks:');
+  if (plan.selectedChecks.length === 0) lines.push('  none');
+  else {
+    for (const decision of plan.selectedChecks) lines.push(...formatPlanDecision(decision));
+  }
+
+  lines.push('Skipped checks:');
+  if (plan.skippedChecks.length === 0) lines.push('  none');
+  else {
+    for (const decision of plan.skippedChecks) lines.push(...formatPlanDecision(decision));
+  }
+
+  return lines;
+}
+
+export function formatVerificationPlanPreview(preview: VerificationPlanPreview): string {
+  return [
+    'Verification Plan Preview (read-only)',
+    `Project: ${preview.profile.displayName}`,
+    `Repository: ${preview.profile.repositoryRoot}`,
+    `Recommendation source: ${preview.plans.quick.recommendationSource}`,
+    '',
+    ...formatPlan(preview.plans.quick),
+    '',
+    ...formatPlan(preview.plans.full),
+  ].join('\n');
+}
 
 export function formatProjectProfile(profile: ProjectProfile): string {
   const lines = [

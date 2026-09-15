@@ -13,6 +13,8 @@ evaluates a gate, or persists results.
 - Review evidence-backed project facts and observed command candidates, refresh them with
   `Understand Project`, and stop an active scan without executing a candidate or writing profile
   state.
+- Review deterministic Quick and Full verification-plan previews with a selected/skipped reason and
+  source evidence for every observed check. Previewing never executes a check or persists a plan.
 - Review branch, changed files, configured checks, current gate, live progress, and run history.
 - Initialize `.verify/project.yml`, run verification, interrupt an active request, and open the
   repository with keyboard-accessible controls.
@@ -34,11 +36,13 @@ Native requests are serialized to avoid concurrent migration/bootstrap races. De
 an explicit `VERIFY_ENGINE_COMMAND` plus `VERIFY_ENGINE_ARGS_JSON` (a JSON string array); release
 builds always resolve the bundled sidecar and ignore those development variables.
 
-The additive `project.profile` method and `profile.progress` events carry the same typed
-`ProjectProfile` produced by the headless core. `operation.cancel` generalizes correlated
-cancellation for profiling while the existing `verification.cancel` contract remains supported.
-The bridge validates the terminal result according to the target method: profiling cancellation
-does not require or create a persisted verification run.
+The additive `project.profile` method carries the same typed `ProjectProfile` produced by the
+headless core. The `verification.plan` method performs one bounded scan and returns that profile
+with normalized Quick and Full previews; both operations stream `profile.progress` events.
+`operation.cancel` provides correlated cancellation for either read-only operation while the
+existing `verification.cancel` contract remains supported. The bridge validates the terminal result
+according to the target method: profiling or planning cancellation does not require or create a
+persisted verification run.
 
 `pnpm --filter @verify/desktop dev` runs a browser-only visual preview with deterministic mock data;
 query parameters `?scenario=WARN`, `?scenario=BLOCK`, and `?uninitialized=1` exercise major states.
@@ -57,9 +61,10 @@ unrestricted remote commands, network servers, telemetry, cloud services, and AI
 
 ## Data owned
 
-Ephemeral dashboard/view state, theme preference, profile and verification progress presentation,
-repository-input state, request correlation, and native child-process IDs. Configuration and run
-history remain owned by the headless engine. Project profiles are not persisted.
+Ephemeral dashboard/view state, theme preference, profile/plan and verification progress
+presentation, repository-input state, request correlation, and native child-process IDs.
+Configuration and run history remain owned by the headless engine. Project profiles and plan
+previews are not persisted.
 
 ## Important invariants
 
@@ -70,9 +75,12 @@ history remain owned by the headless engine. Project profiles are not persisted.
 - Native sidecar stdout is bounded, UTF-8 NDJSON and is correlated before it crosses the IPC channel.
 - Project profiling is read-only: observed scripts remain non-executable candidates, and the
   profile-only path writes no repository, configuration, or SQLite state.
-- Graceful cancellation uses `operation.cancel` for project profiling and retains the last completed
-  profile. Verification continues to use `verification.cancel` and first requests a persisted
-  cancelled run; an unresponsive engine is terminated after a bounded grace period.
+- Plan previews are deterministic projections of the returned profile. They never execute an
+  observed command, write configuration, create an approval, or affect PASS/WARN/BLOCK.
+- Graceful cancellation uses `operation.cancel` for project profiling and planning and retains the
+  last completed matching profile/plan pair. Verification continues to use `verification.cancel`
+  and first requests a persisted cancelled run; an unresponsive engine is terminated after a
+  bounded grace period.
 - On Windows, the sidecar and descendants are assigned to a kill-on-close Job Object so fallback
   cleanup cannot intentionally leave a verification process tree behind.
 
@@ -110,8 +118,9 @@ installer and its actual installed workflow must also pass the outside-checkout 
 The first three commands cover the React/protocol client and browser bundle. The final command is the
 platform-specific native check. Tests explicitly cover empty, loading, running, PASS, WARN, BLOCK,
 error, and historical-run states, plus keyboard behavior, focus return, accessibility scanning, and
-split/coalesced protocol frames and graceful cancellation state. A child-process integration test
-compares the GUI protocol client with CLI JSON output from the same headless engine. Native Rust,
+split/coalesced protocol frames, graceful cancellation state, and read-only Quick/Full plan
+presentation. A child-process integration test compares profile and plan results from the GUI
+protocol client with CLI JSON output from the same headless engine. Native Rust,
 sidecar, installer, outside-checkout workflow, Node-independence, persistence, and process-cleanup
 results must be recorded separately because browser tests cannot prove them.
 
@@ -122,5 +131,6 @@ Vite evidence. A Vite project with `index.html` remains Vite, while a plain stat
 a preview capability: the desktop does not start a preview server or execute a command. Workspace
 units and multi-target ambiguities are displayed without a selected default. The same profile
 contract and rendering path carry these findings, and profiling writes no repository,
-configuration, or database state. AI, planning, schema-v2 behavior, and smart command execution are
-intentionally absent.
+configuration, or database state. The first Iteration 6 slice adds deterministic plan preview only
+for a complete, unambiguous, single-root Node/Vite/Vitest profile. Plan execution and persistence,
+schema-v2 behavior, approval receipts, AI, and smart command execution remain intentionally absent.

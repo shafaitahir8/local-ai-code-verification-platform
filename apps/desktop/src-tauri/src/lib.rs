@@ -330,6 +330,7 @@ struct CancellationState {
 enum CancellableRequest {
     VerificationRun,
     ProjectProfile,
+    VerificationPlan,
 }
 
 impl CancellableRequest {
@@ -337,6 +338,7 @@ impl CancellableRequest {
         match method {
             "verification.run" => Some(Self::VerificationRun),
             "project.profile" => Some(Self::ProjectProfile),
+            "verification.plan" => Some(Self::VerificationPlan),
             _ => None,
         }
     }
@@ -344,7 +346,7 @@ impl CancellableRequest {
     fn cancel_method(self) -> &'static str {
         match self {
             Self::VerificationRun => "verification.cancel",
-            Self::ProjectProfile => "operation.cancel",
+            Self::ProjectProfile | Self::VerificationPlan => "operation.cancel",
         }
     }
 
@@ -356,6 +358,9 @@ impl CancellableRequest {
             Self::ProjectProfile => format!(
                 "Verification engine process {process_id} did not return a cancelled project profile result within the cancellation grace period."
             ),
+            Self::VerificationPlan => format!(
+                "Verification engine process {process_id} did not return a cancelled verification plan preview within the cancellation grace period."
+            ),
         }
     }
 
@@ -366,6 +371,9 @@ impl CancellableRequest {
             }
             Self::ProjectProfile => {
                 "Engine accepted cancellation but did not return a cancelled project profile result."
+            }
+            Self::VerificationPlan => {
+                "Engine accepted cancellation but did not return a cancelled verification plan preview."
             }
         }
     }
@@ -1142,6 +1150,7 @@ mod tests {
         for (target, expected_method) in [
             (CancellableRequest::VerificationRun, "verification.cancel"),
             (CancellableRequest::ProjectProfile, "operation.cancel"),
+            (CancellableRequest::VerificationPlan, "operation.cancel"),
         ] {
             let encoded = encode_cancellation_request("cancel-7", "request-1", target).unwrap();
             let value: Value = serde_json::from_str(&encoded).unwrap();
@@ -1153,7 +1162,7 @@ mod tests {
     }
 
     #[test]
-    fn only_verification_runs_and_project_profiles_are_cancellable() {
+    fn only_supported_long_running_requests_are_cancellable() {
         assert_eq!(
             CancellableRequest::from_method("verification.run"),
             Some(CancellableRequest::VerificationRun)
@@ -1161,6 +1170,10 @@ mod tests {
         assert_eq!(
             CancellableRequest::from_method("project.profile"),
             Some(CancellableRequest::ProjectProfile)
+        );
+        assert_eq!(
+            CancellableRequest::from_method("verification.plan"),
+            Some(CancellableRequest::VerificationPlan)
         );
         assert_eq!(CancellableRequest::from_method("project.discover"), None);
     }
@@ -1292,6 +1305,29 @@ mod tests {
                 r#"{"protocolVersion":1,"id":"profile-1","result":{"status":"cancelled"}}"#,
                 true,
                 Some(CancellableRequest::ProjectProfile),
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn accepted_plan_cancellation_requires_the_nonpersisted_cancelled_result() {
+        let accepted = ProtocolStreamState {
+            cancellation_acknowledged: Some(true),
+            ..ProtocolStreamState::default()
+        };
+        assert!(accepted
+            .validate_cancellation(
+                r#"{"protocolVersion":1,"id":"plan-1","result":{"status":"completed","preview":{}}}"#,
+                true,
+                Some(CancellableRequest::VerificationPlan),
+            )
+            .unwrap_err()
+            .contains("did not return a cancelled verification plan preview"));
+        accepted
+            .validate_cancellation(
+                r#"{"protocolVersion":1,"id":"plan-1","result":{"status":"cancelled"}}"#,
+                true,
+                Some(CancellableRequest::VerificationPlan),
             )
             .unwrap();
     }

@@ -13,6 +13,7 @@ import type {
   ProjectProfileProgress,
   RunsResult,
   RunPhase,
+  VerificationPlanPreview,
   VerificationRun,
 } from './types.js';
 
@@ -32,6 +33,7 @@ export interface DashboardController {
   readonly profilePhase: ProfilePhase;
   readonly discovery?: DiscoveryResult;
   readonly profile?: ProjectProfile;
+  readonly planPreview?: VerificationPlanPreview;
   readonly profileProgress?: ProjectProfileProgress;
   readonly profileError?: string;
   readonly config?: ConfigResult;
@@ -63,7 +65,7 @@ export function useDashboard(
   const [runPhase, setRunPhase] = useState<RunPhase>('idle');
   const [profilePhase, setProfilePhase] = useState<ProfilePhase>('idle');
   const [discovery, setDiscovery] = useState<DiscoveryResult>();
-  const [profile, setProfile] = useState<ProjectProfile>();
+  const [planPreview, setPlanPreview] = useState<VerificationPlanPreview>();
   const [profileProgress, setProfileProgress] = useState<ProjectProfileProgress>();
   const [profileError, setProfileError] = useState<string>();
   const [config, setConfig] = useState<ConfigResult>();
@@ -81,8 +83,9 @@ export function useDashboard(
   const profileController = useRef<AbortController | undefined>(undefined);
   const currentRepository = useRef('');
   const initialRepositoryOpened = useRef(false);
+  const profile = planPreview?.profile;
 
-  const requestProjectProfile = useCallback(
+  const requestProjectPlanPreview = useCallback(
     async (selectedRepository: string, generation: number) => {
       const controller = new AbortController();
       profileController.current?.abort();
@@ -94,7 +97,7 @@ export function useDashboard(
 
       try {
         const result = await client.request(
-          'project.profile',
+          'verification.plan',
           { repository: selectedRepository },
           {
             signal: controller.signal,
@@ -118,16 +121,18 @@ export function useDashboard(
 
         if (result.status === 'cancelled') {
           setProfilePhase('cancelled');
-          setLiveAnnouncement('Project scan stopped. The last completed profile is unchanged.');
+          setLiveAnnouncement(
+            'Project scan stopped. The last completed profile and plan preview are unchanged.',
+          );
           return;
         }
 
-        setProfile(result.profile);
+        setPlanPreview(result.preview);
         setProfilePhase('completed');
         setLiveAnnouncement(
-          result.profile.completeness === 'partial'
-            ? `${result.profile.displayName} was understood with partial coverage.`
-            : `${result.profile.displayName} project profile is ready.`,
+          result.preview.profile.completeness === 'partial'
+            ? `${result.preview.profile.displayName} was understood with partial coverage; deterministic plan recommendations may be unavailable.`
+            : `${result.preview.profile.displayName} project profile and verification plan preview are ready.`,
         );
       } catch (profileRequestError) {
         if (generation !== loadGeneration.current || profileController.current !== controller) {
@@ -166,7 +171,7 @@ export function useDashboard(
       const repositoryChanged = currentRepository.current !== selectedRepository;
       currentRepository.current = selectedRepository;
       if (repositoryChanged) {
-        setProfile(undefined);
+        setPlanPreview(undefined);
       }
       setRepository(selectedRepository);
       setLoadPhase('loading');
@@ -202,7 +207,7 @@ export function useDashboard(
         setHistory(nextHistory.runs);
         setLoadPhase('ready');
         setLiveAnnouncement(`${nextDiscovery.projectName} is ready.`);
-        void requestProjectProfile(selectedRepository, generation);
+        void requestProjectPlanPreview(selectedRepository, generation);
       } catch (loadError) {
         if (generation !== loadGeneration.current) {
           return;
@@ -212,15 +217,15 @@ export function useDashboard(
         setLiveAnnouncement('Repository loading failed.');
       }
     },
-    [client, requestProjectProfile],
+    [client, requestProjectPlanPreview],
   );
 
   const understandProject = useCallback(async () => {
     if (!repository || loadPhase !== 'ready') {
       return;
     }
-    await requestProjectProfile(repository, loadGeneration.current);
-  }, [loadPhase, repository, requestProjectProfile]);
+    await requestProjectPlanPreview(repository, loadGeneration.current);
+  }, [loadPhase, repository, requestProjectPlanPreview]);
 
   const stopProjectProfile = useCallback(() => {
     const controller = profileController.current;
@@ -408,6 +413,7 @@ export function useDashboard(
     profilePhase,
     discovery,
     profile,
+    planPreview,
     profileProgress,
     profileError,
     config,

@@ -3515,3 +3515,406 @@ Next safe step:
 
 - Stage only the audited Iteration 5 files, review the complete cached patch and whitespace, commit
   as `feat: complete Iteration 5 project intelligence`, confirm a clean tree, and stop.
+
+## 2026-09-15 — Iteration 6 plan-preview slice start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Confirmed Iteration 5 is committed at `b76fcbd915a350dc4cda0db97aa07ee4acca5b73`
+  with a clean working tree before this checkpoint.
+- Confirmed TASK-014 is complete, no Iteration 6 implementation exists, and `v0.1.0` remains at
+  `fb1880d7679c886c04520c4493911a0c141a6761`.
+- Reviewed the post-v0.1.0 architecture, implementation plan, and ADR-009 through ADR-014.
+
+Affected:
+
+- Iteration 6 first vertical slice: versioned deterministic quick/full verification-plan preview.
+
+Validated:
+
+- Current branch is `main`, tracking `origin/main`; the repository was clean at slice start.
+- The authorized slice excludes execution, persistence, configuration schema migration, approval
+  receipts, and AI.
+
+Remaining:
+
+- Define and test the minimum `VerificationPlan` contract and deterministic Node/Vite/Vitest
+  planning rules, then expose the same normalized preview through core, protocol, CLI, and desktop.
+
+Next safe step:
+
+- Inspect the existing domain/core/profile contracts and define the preview-only plan contract
+  before adding protocol or interface projections.
+
+## 2026-09-15 — Iteration 6 plan-preview contract checkpoint
+
+Status: IN PROGRESS
+
+Completed:
+
+- Added TASK-015 for the preview-only Iteration 6 slice and kept execution, persistence, schema-v2,
+  approval, and AI explicitly out of scope.
+- Added versioned `VerificationPlan` domain records for Quick/Full modes, selected/skipped checks,
+  deterministic status/reasons, source task/capability/evidence references, and profile provenance.
+- Added pure core planning rules and a one-shot profile-to-Quick/Full preview use case; no new package
+  or dependency was introduced.
+- Added initial domain/core tests for mode differences, source reasoning, missing checks, partial or
+  unsupported profiles, ambiguity, malformed evidence, cancellation, and no execution/persistence.
+
+Affected:
+
+- `@verify/domain`, `@verify/core`, TASK-015, and this recovery journal only.
+
+Validated:
+
+- Domain lint and typecheck passed; domain tests passed with 9 tests; domain build passed.
+- Core lint passed.
+- Core typecheck stopped on one compile-time narrowing error in `packages/core/src/planning.ts` line
+  162: the filtered task-candidate array retains the broader task-kind type.
+- No protocol, CLI, desktop, Rust/native, configuration, storage, or execution behavior has been
+  changed yet.
+
+Remaining:
+
+- Apply the narrow type-guard fix, rerun focused core validation, then complete protocol/CLI and
+  desktop/native integration with tests and documentation.
+
+Next safe step:
+
+- Preserve the current files, make the filtered candidate collection explicitly retain
+  `VerificationPlanCheckKind`, and rerun core typecheck/tests/build before any interface work.
+
+## 2026-09-15 — Iteration 6 slice 6A recovery audit
+
+Status: IN PROGRESS
+
+Completed:
+
+- Re-read the active task, architecture, planning/approval/cancellation ADRs, and the latest
+  recovery journal before resuming implementation.
+- Audited the complete tracked and untracked patch against the committed Iteration 5 baseline.
+- Confirmed the interrupted work is limited to the preview-only plan contract, core planner/use
+  case, focused tests, TASK-015, and append-only journal entries.
+
+Affected:
+
+- Existing Iteration 6 slice 6A domain/core work only; no new implementation was added during the
+  audit.
+
+Validated:
+
+- `HEAD` remains `b76fcbd915a350dc4cda0db97aa07ee4acca5b73`; `v0.1.0` remains
+  `fb1880d7679c886c04520c4493911a0c141a6761`.
+- No schema-v2 migration, approval receipt, AI/Ollama, plan execution, or later Iteration 6 work is
+  present.
+
+Remaining:
+
+- Fix the known core type narrowing error without changing planner behavior, validate the core
+  boundary, then add protocol/CLI and desktop projections.
+
+Next safe step:
+
+- Add an object-level task-candidate type guard so `Array.filter` retains
+  `VerificationPlanCheckKind`, then rerun the focused core gates.
+
+## 2026-09-15 — Iteration 6 plan contract and core boundary
+
+Status: COMPLETE
+
+Completed:
+
+- Fixed the interrupted typecheck by narrowing whole task-candidate objects with a typed predicate;
+  planner behavior is unchanged and no broad collection cast was introduced.
+- Completed the version-1 preview contract and pure Node/Vite/Vitest Quick/Full planner in the
+  existing domain/core packages.
+- Completed the one-shot core use case that profiles once, returns both plans, propagates profile
+  cancellation, and never loads configuration, executes a task, or persists a record.
+
+Affected:
+
+- `@verify/domain`, `@verify/core`, their focused tests/documentation, and TASK-015.
+
+Validated:
+
+- Domain lint/typecheck/build passed; 9 domain tests passed.
+- Core typecheck/build passed; 15 core tests passed.
+- Focused `git diff --check` passed.
+
+Remaining:
+
+- Add the protocol-v1 method, CLI projection, native cancellation routing, and desktop preview with
+  cross-interface equivalence coverage.
+
+Next safe step:
+
+- Add one repository-based `verification.plan` protocol request returning the same completed or
+  cancelled Quick/Full preview and reusing profile progress/cancellation semantics.
+
+## 2026-09-15 — Iteration 6 slice 6A recovery after interface integration
+
+Status: IN PROGRESS
+
+Completed:
+
+- Recovered the uncommitted working tree beyond the preceding core-only checkpoint: additive
+  planning protocol, CLI preview, native cancellation route, and desktop Quick/Full card are present.
+- Confirmed the previously identified core type guard is fixed; evidence-resolution and
+  mode/profile-provenance hardening edits are also present but not yet post-change validated.
+
+Affected:
+
+- `@verify/domain`, `@verify/core`, `@verify/protocol`, CLI, desktop/native bridge, TASK-015,
+  architecture/user documentation, and this journal.
+
+Validated:
+
+- Earlier focused domain/core/protocol/CLI and desktop checks were green before the final audit edits.
+- `HEAD` is the committed Iteration 5 SHA `b76fcbd915a350dc4cda0db97aa07ee4acca5b73`;
+  `v0.1.0` still resolves to `fb1880d7679c886c04520c4493911a0c141a6761`.
+- No schema-v2, approval, AI, plan execution, or later Iteration 6 source is in the patch.
+
+Remaining:
+
+- Validate the evidence/provenance hardening and cross-interface consistency; reconcile docs; run
+  sequential full workspace and Rust gates, then audit and commit only the coherent 6A patch.
+
+Next safe step:
+
+- Run focused domain/core/protocol/CLI/desktop validation against the current source, fix only
+  genuine 6A issues, and checkpoint the results before the full regression gate.
+
+## 2026-09-15 — Iteration 6 planning evidence and interface checkpoint
+
+Status: IN PROGRESS
+
+Completed:
+
+- Integrated `verification.plan`, `verify plan`, method-aware native cancellation, and a read-only
+  desktop Quick/Full card using the same one-scan core result.
+- Hardened prerequisite and check-capability evidence resolution; candidates without any
+  resolvable task evidence are omitted, while partially evidenced candidates remain skipped with
+  valid source references only.
+- Bound Quick/Full modes and plan provenance to the embedded profile; protocol-level source-copy
+  validation and regression cases are being finalized.
+- Reconciled architecture, root CLI documentation, and the user guide with the preview-only scope.
+
+Affected:
+
+- Domain/core/protocol contracts and tests, CLI, desktop/browser/native bridge, and documentation.
+
+Validated:
+
+- Post-audit domain tests: 9 passed; core typecheck, 19 tests, and build passed.
+- Earlier CLI tests: 26 passed; desktop typecheck and 41 tests passed.
+- The desktop profile/plan pair retains completed data on failed or cancelled refresh and clears
+  stale data when a different repository opens, as covered by focused tests.
+
+Remaining:
+
+- Finish post-change protocol validation, then run sequential workspace regression and applicable
+  Cargo gates; complete final scope/hygiene audit before an authorized 6A commit.
+
+Next safe step:
+
+- Wait for focused protocol checks to finish, run/confirm cross-interface focused tests against
+  the strict schema, then checkpoint before the full workspace gate.
+
+## 2026-09-15 — Iteration 6 slice 6A full regression start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Finished the audit hardening: core requires unique/resolvable evidence and filters malformed
+  capability references; protocol validates mode/profile provenance and every included plan
+  decision against its embedded profile.
+- Confirmed CLI and desktop consume the same strict planning result, with no duplicated planning
+  rules in the native bridge or React UI.
+
+Affected:
+
+- 6A domain/core/protocol contracts and tests, CLI, desktop, native routing, and docs.
+
+Validated:
+
+- Core typecheck/build and 19 tests passed; protocol format/lint/typecheck/build and 19 tests
+  passed; post-schema CLI 26 tests and desktop 41 tests passed.
+- The plan-preview protocol remains additive to version 1; verification and profile cancellation
+  methods retain their existing meanings in focused coverage.
+
+Remaining:
+
+- Sequential workspace format/lint/typecheck/tests/build, native Rust gates, final documentation
+  and Git scope review, then the single authorized 6A commit if all checks are coherent.
+
+Next safe step:
+
+- Run `corepack pnpm format:check`, `lint`, `typecheck`, `test`, and `build` sequentially, then
+  `git diff --check`; do not overlap Turbo graphs.
+
+## 2026-09-15 — Iteration 6 first full-test classification
+
+Status: IN PROGRESS
+
+Completed:
+
+- Full workspace format, lint, and typecheck gates passed after formatting three edited files.
+- Started the single full Turbo test graph; the new planning, protocol, project-intelligence,
+  verification, and desktop tests observed in that graph passed.
+
+Affected:
+
+- Validation only; no production behavior has been changed in response to the failure.
+
+Validated:
+
+- One existing CLI init/inspect/run/gate/history workflow exceeded its 5-second test deadline
+  under concurrent Turbo load; timed-out fixture cleanup then reported an `EBUSY` directory lock.
+- The same CLI package suite had previously passed 26/26 when run in isolation against the strict
+  planning schema. The full graph is not recorded as passed.
+
+Remaining:
+
+- Isolate the timed-out legacy workflow, classify scheduling versus behavior, make only a narrow
+  justified test/behavior fix if needed, then rerun the affected and full gates.
+
+Next safe step:
+
+- Run only the named CLI workflow in its package test runner and inspect its fixture/process
+  lifecycle before changing timeout or cleanup assumptions.
+
+## 2026-09-15 — Iteration 6 full-suite timing classification
+
+Status: COMPLETE
+
+Completed:
+
+- Isolated the unchanged init/inspect/run/gate/history CLI workflow: it passed in about two
+  seconds outside the concurrent Turbo graph.
+- Classified the 5-second full-graph timeout and following fixture `EBUSY` as scheduler-sensitive
+  test timing, not a planning or verification behavior regression.
+- Increased only that five-child-process workflow's test deadline to 20 seconds; all gate,
+  persistence, and output assertions remain intact.
+
+Affected:
+
+- One CLI integration-test deadline and this journal; no production cancellation, process,
+  verification, or planning semantics changed.
+
+Validated:
+
+- The named workflow passed in isolation before the deadline change; the complete CLI package
+  passed 26/26 after it.
+
+Remaining:
+
+- Rerun the full workspace test/build gates, then native validation and final 6A audit.
+
+Next safe step:
+
+- Rerun `corepack pnpm test` with the existing full behavioral assertions, followed by
+  `corepack pnpm build` only after the test graph has completed.
+
+## 2026-09-15 — Iteration 6 slice 6A workspace regression
+
+Status: COMPLETE
+
+Completed:
+
+- Ran the complete workspace handoff gates sequentially after the narrow test-deadline correction.
+- Confirmed core/protocol/CLI/desktop plan equivalence and preservation of the existing configured
+  verification workflow in the full test graph.
+
+Affected:
+
+- Validation and the 6A source/tests/docs patch; no additional product functionality.
+
+Validated:
+
+- `corepack pnpm format:check`, `lint`, `typecheck`, and `test`: passed.
+- `corepack pnpm build`: all 13 package/application builds passed.
+- `git diff --check`: passed. The earlier first full test pass failed on a legacy 5-second CLI
+  scheduling deadline; the rerun passed after only that deadline was adjusted.
+
+Remaining:
+
+- Run Cargo format, locked check, strict Clippy, and locked tests for the Rust cancellation route;
+  complete final documentation/scope/hygiene review and commit the intended 6A snapshot.
+
+Next safe step:
+
+- Run the four native Rust gates sequentially with the existing locked Tauri manifest; do not
+  treat the browser build as native validation.
+
+## 2026-09-15 — Iteration 6 native planning route validation
+
+Status: COMPLETE
+
+Completed:
+
+- Validated the thin Tauri route for the additive plan-preview method and its method-aware
+  correlated `operation.cancel` frame; existing verification/profile cancellation paths remain.
+- Kept the production sidecar resolution, process containment, and packaging configuration
+  unchanged.
+
+Affected:
+
+- `apps/desktop/src-tauri/src/lib.rs`, its Rust tests, and this journal.
+
+Validated:
+
+- `cargo fmt --check` and `cargo check --locked`: passed.
+- Strict Clippy (`cargo clippy --locked --all-targets -- -D warnings`): passed.
+- `cargo test --locked`: 13 Rust tests passed, including plan cancellation terminal validation.
+
+Remaining:
+
+- Final task/docs and Git hygiene audit; stage only intentional 6A work and commit if coherent.
+- A new installed package was not built or smoked for this preview-only slice; native source
+  validation is not an installed-app release claim.
+
+Next safe step:
+
+- Inspect every modified/untracked source, test, documentation, and lockfile path; confirm ignored
+  outputs remain untracked, then mark TASK-015 complete and review the staged patch.
+
+## 2026-09-15 — Iteration 6 slice 6A completion and commit boundary
+
+Status: COMPLETE
+
+Completed:
+
+- Completed the preview-only TASK-015 contract, deterministic planner, additive protocol/CLI/native
+  route, read-only desktop card, equivalence/cancellation/no-write tests, and documentation.
+- Audited every modified and untracked path; no configuration, storage, AI, plan execution,
+  schema-v2, approval, or later-iteration implementation is included.
+
+Affected:
+
+- `@verify/domain`, `@verify/core`, `@verify/protocol`, CLI, desktop/Rust bridge, TASK-015,
+  architecture/root/package/user documentation, and this append-only journal.
+
+Validated:
+
+- Full sequential workspace format/lint/typecheck/test passed; all 13 builds passed;
+  `git diff --check` passed.
+- Rust format, locked check, strict Clippy, and locked tests passed with 13 Rust tests.
+- Core/CLI/protocol/desktop plans matched after only generated profile time/duration were
+  normalized. Test traps found no project-command execution and no repository/config/SQLite writes.
+- No lockfile change or tracked generated exe, installer, database, log, target, dist,
+  `node_modules`, or Turbo output is present; `v0.1.0` and Iteration 5 history are untouched.
+
+Remaining:
+
+- Review and commit the staged source/docs snapshot. The 6A preview has not been rebuilt and
+  smoke-tested as an installed package; this is not a new native release claim.
+- Schema-v2 migration, executable-policy approval, persistence, and plan execution belong to
+  later Iteration 6 slices.
+
+Next safe step:
+
+- Run final formatting/whitespace checks, stage only audited 6A files, review `git diff --cached`
+  and `git diff --cached --check`, create the authorized single commit, then confirm a clean tree.

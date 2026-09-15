@@ -35,7 +35,7 @@ interface ProtocolRequestContext {
   ) => boolean;
 }
 
-type CancellableProtocolMethod = 'project.profile' | 'verification.run';
+type CancellableProtocolMethod = 'project.profile' | 'verification.plan' | 'verification.run';
 
 interface CancellableOperation {
   readonly method: CancellableProtocolMethod;
@@ -81,7 +81,9 @@ class ProtocolSession {
     }
 
     const cancellableMethod =
-      request.method === 'verification.run' || request.method === 'project.profile'
+      request.method === 'verification.run' ||
+      request.method === 'verification.plan' ||
+      request.method === 'project.profile'
         ? request.method
         : undefined;
     const controller = cancellableMethod === undefined ? undefined : new AbortController();
@@ -205,6 +207,30 @@ export async function handleProtocolRequest(
         });
         writer.write(
           encodeResult('project.profile', {
+            protocolVersion: PROTOCOL_VERSION,
+            id: request.id,
+            result,
+          }),
+        );
+        return;
+      }
+      case 'verification.plan': {
+        const result = await application.previewVerificationPlans({
+          repository: request.params.repository,
+          signal: context.signal,
+          onProgress: (progress) => {
+            writer.write(
+              encodeEvent({
+                protocolVersion: PROTOCOL_VERSION,
+                id: request.id,
+                event: 'profile.progress',
+                data: progress,
+              }),
+            );
+          },
+        });
+        writer.write(
+          encodeResult('verification.plan', {
             protocolVersion: PROTOCOL_VERSION,
             id: request.id,
             result,

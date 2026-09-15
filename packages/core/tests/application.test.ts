@@ -158,6 +158,103 @@ describe('VerifierApplication', () => {
     ).resolves.toBe(expected);
   });
 
+  it('previews both plans through profiling without configuration, execution, or persistence', async () => {
+    const ports = dependencies();
+    const profileResult: ProjectProfileResult = {
+      status: 'completed',
+      profile: {
+        profileVersion: 1,
+        repositoryRoot: root,
+        displayName: 'example',
+        generatedAt: '2026-09-15T00:00:00.000Z',
+        completeness: 'complete',
+        scan: {
+          entriesScanned: 1,
+          filesScanned: 1,
+          directoriesScanned: 0,
+          bytesRead: 10,
+          skippedDirectories: 0,
+          elapsedMs: 1,
+          limitsReached: [],
+        },
+        capabilities: [
+          {
+            id: 'runtime.node',
+            kind: 'runtime',
+            name: 'Node.js',
+            confidence: 'confirmed',
+            evidenceIds: ['manifest'],
+          },
+          {
+            id: 'framework.vite',
+            kind: 'framework',
+            name: 'Vite',
+            confidence: 'confirmed',
+            evidenceIds: ['manifest'],
+          },
+          {
+            id: 'test-framework.vitest',
+            kind: 'test-framework',
+            name: 'Vitest',
+            confidence: 'confirmed',
+            evidenceIds: ['manifest'],
+          },
+        ],
+        workspaceUnits: [{ id: 'workspace.root', path: '.', evidenceIds: ['manifest'] }],
+        taskCandidates: [],
+        evidence: [
+          {
+            id: 'manifest',
+            sensorId: 'node',
+            kind: 'manifest',
+            path: 'package.json',
+            summary: 'Node package manifest is present.',
+          },
+        ],
+        ambiguities: [],
+        warnings: [],
+      },
+    };
+    ports.profiler.profile = async () => profileResult;
+    ports.configuration.discover = async () => {
+      throw new Error('Planning must not read configuration.');
+    };
+    ports.configuration.load = async () => {
+      throw new Error('Planning must not load configuration.');
+    };
+    ports.verification.run = async () => {
+      throw new Error('Planning must not execute commands.');
+    };
+    ports.runs.saveRun = async () => {
+      throw new Error('Planning must not persist runs.');
+    };
+    const application = new VerifierApplication(ports);
+
+    const result = await application.previewVerificationPlans({ repository: root });
+
+    expect(result).toMatchObject({
+      status: 'completed',
+      preview: {
+        profile: { repositoryRoot: root },
+        plans: {
+          quick: { mode: 'quick', status: 'unavailable' },
+          full: { mode: 'full', status: 'unavailable' },
+        },
+      },
+    });
+    expect(ports.saved).toEqual([]);
+  });
+
+  it('returns cancellation without publishing a plan preview', async () => {
+    const ports = dependencies();
+    ports.profiler.profile = async () => ({ status: 'cancelled' });
+    const application = new VerifierApplication(ports);
+
+    await expect(application.previewVerificationPlans({ repository: root })).resolves.toEqual({
+      status: 'cancelled',
+    });
+  });
+
   it('evaluates and persists exactly the run it returns', async () => {
     const ports = dependencies();
     const application = new VerifierApplication({

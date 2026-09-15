@@ -11,12 +11,14 @@ import type {
   ProjectProfileProgress,
   ProjectProfileResult,
   RepositoryChange,
+  VerificationPlanPreviewResult,
   VerificationRun,
 } from '@verify/domain';
 import { evaluateQualityGate } from '@verify/policy';
 import type { VerificationLifecycleEvent } from '@verify/verification';
 
 import { NoQualityGateError, NoVerificationRunError } from './errors.js';
+import { createVerificationPlanPreview } from './planning.js';
 import type {
   ConfigurationPort,
   ProjectProfilerPort,
@@ -61,6 +63,8 @@ export interface ProfileProjectRequest {
   readonly onProgress?: (progress: ProjectProfileProgress) => void;
 }
 
+export type PreviewVerificationPlansRequest = ProfileProjectRequest;
+
 export class VerifierApplication {
   readonly #configuration: ConfigurationPort;
   readonly #repository: RepositoryPort;
@@ -92,6 +96,15 @@ export class VerifierApplication {
       ...(request.signal === undefined ? {} : { signal: request.signal }),
       ...(request.onProgress === undefined ? {} : { onProgress: request.onProgress }),
     });
+  }
+
+  public async previewVerificationPlans(
+    request: PreviewVerificationPlansRequest,
+  ): Promise<VerificationPlanPreviewResult> {
+    const result = await this.profileProject(request);
+    return result.status === 'cancelled'
+      ? result
+      : { status: 'completed', preview: createVerificationPlanPreview(result.profile) };
   }
 
   public async getConfiguration(repository: string): Promise<ConfigurationState> {

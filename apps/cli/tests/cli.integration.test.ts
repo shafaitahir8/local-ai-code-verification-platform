@@ -4,7 +4,11 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 
-import type { ProjectProfileResult, VerificationRun } from '@verify/domain';
+import type {
+  ProjectProfileResult,
+  VerificationPlanPreviewResult,
+  VerificationRun,
+} from '@verify/domain';
 import {
   decodeResultLine,
   decodeServerMessageLine,
@@ -282,6 +286,25 @@ function withoutVolatileProfileFields(result: ProjectProfileResult): unknown {
   };
 }
 
+function withoutVolatilePlanFields(result: VerificationPlanPreviewResult): unknown {
+  if (result.status === 'cancelled') return result;
+  return {
+    ...result,
+    preview: {
+      ...result.preview,
+      profile: {
+        ...result.preview.profile,
+        generatedAt: '<generated-at>',
+        scan: { ...result.preview.profile.scan, elapsedMs: 0 },
+      },
+      plans: {
+        quick: { ...result.preview.plans.quick, profileGeneratedAt: '<generated-at>' },
+        full: { ...result.preview.plans.full, profileGeneratedAt: '<generated-at>' },
+      },
+    },
+  };
+}
+
 async function runCli(args: string[], database: string): Promise<CliResult> {
   const previousDatabase = process.env.VERIFY_DATABASE_PATH;
   process.env.VERIFY_DATABASE_PATH = database;
@@ -338,6 +361,68 @@ describe('actual CLI workflow', () => {
     expect(result.stdout).toContain(expectedOutput);
   });
 
+  it('returns interruption exit 3 when plan profiling is cancelled', async () => {
+    const { repository, database } = await fixture('project-intelligence/node-vite-vitest');
+    let signalProfilerStarted: (() => void) | undefined;
+    const profilerStarted = new Promise<void>((resolvePromise) => {
+      signalProfilerStarted = resolvePromise;
+    });
+    const composition = createApplicationComposition({
+      profiler: {
+        profile: ({ signal }) =>
+          new Promise<ProjectProfileResult>((resolvePromise) => {
+            signalProfilerStarted?.();
+            if (signal?.aborted === true) {
+              resolvePromise({ status: 'cancelled' });
+              return;
+            }
+            signal?.addEventListener('abort', () => resolvePromise({ status: 'cancelled' }), {
+              once: true,
+            });
+          }),
+      },
+    });
+    openCompositions.push(composition);
+    const previousDatabase = process.env.VERIFY_DATABASE_PATH;
+    process.env.VERIFY_DATABASE_PATH = database;
+    let stdout = '';
+    let stderr = '';
+    let code = 0;
+    const io: CliIo = {
+      writeOut: (value) => {
+        stdout += value;
+      },
+      writeError: (value) => {
+        stderr += value;
+      },
+      setExitCode: (nextCode) => {
+        code = nextCode;
+        process.exitCode = nextCode;
+      },
+    };
+
+    try {
+      const execution = executeCli(['plan', repository, '--json'], {
+        application: composition.application,
+        io,
+      });
+      await profilerStarted;
+      process.emit('SIGINT');
+      await execution;
+
+      expect(code).toBe(3);
+      expect(stderr).toBe('');
+      expect(JSON.parse(stdout)).toEqual({ status: 'cancelled' });
+      await expect(readFile(database, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      composition.close();
+      openCompositions.splice(openCompositions.indexOf(composition), 1);
+      process.exitCode = undefined;
+      if (previousDatabase === undefined) delete process.env.VERIFY_DATABASE_PATH;
+      else process.env.VERIFY_DATABASE_PATH = previousDatabase;
+    }
+  });
+
   it('initializes, inspects, runs, gates, and reloads persisted history', async () => {
     const { repository, database } = await fixture('git-changes');
 
@@ -384,7 +469,7 @@ describe('actual CLI workflow', () => {
       gate?: { status: string };
     }[];
     expect(persistedHistory[0]).toMatchObject({ id: run.id, gate: { status: 'PASS' } });
-  });
+  }, 20_000);
 
   it.each([
     ['failing-test', 'test'],
@@ -569,6 +654,205 @@ describe('actual CLI workflow', () => {
 });
 
 describe('built child-process protocol', () => {
+  it('exposes one read-only plan preview equivalently through core, CLI, and protocol', async () => {
+    const { repository, database } = await fixture('project-intelligence/node-vite-vitest');
+    const commandMarker = join(repository, 'planning-command-executed.marker');
+    const manifestPath = join(repository, 'package.json');
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    manifest.scripts.test = 'node never-plan.mjs';
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    await writeFile(
+      join(repository, 'never-plan.mjs'),
+      [
+        "import { writeFileSync } from 'node:fs';",
+        "writeFileSync('planning-command-executed.marker', 'unexpected');",
+        '',
+      ].join('\n'),
+    );
+    const statusBefore = await git(repository, 'status', '--short', '--untracked-files=all');
+
+    const cli = await runCliProcess(['plan', repository, '--json'], database);
+    expect(cli).toMatchObject({ code: 0, stderr: '' });
+    expect(cli.stdout.trim().split(/\r?\n/u)).toHaveLength(1);
+    const cliResult = JSON.parse(cli.stdout) as VerificationPlanPreviewResult;
+    if (cliResult.status !== 'completed') throw new Error('The CLI plan preview was cancelled.');
+    expect(cliResult.preview.plans.quick).toMatchObject({
+      mode: 'quick',
+      status: 'ready',
+    });
+    expect(cliResult.preview.plans.quick.selectedChecks.map(({ kind }) => kind)).toEqual([
+      'test',
+      'lint',
+    ]);
+    expect(cliResult.preview.plans.quick.skippedChecks.map(({ kind }) => kind)).toEqual([
+      'typecheck',
+      'build',
+    ]);
+    expect(cliResult.preview.plans.full.selectedChecks.map(({ kind }) => kind)).toEqual([
+      'test',
+      'lint',
+      'typecheck',
+      'build',
+    ]);
+    expect(cliResult.preview.plans.full.skippedChecks).toEqual([]);
+    expect(cliResult.preview.plans.quick.selectedChecks).toContainEqual(
+      expect.objectContaining({ kind: 'test', command: 'node never-plan.mjs' }),
+    );
+
+    const observedCommands = new Set(
+      cliResult.preview.profile.taskCandidates.map(({ command }) => command),
+    );
+    for (const plan of Object.values(cliResult.preview.plans)) {
+      for (const decision of [...plan.selectedChecks, ...plan.skippedChecks]) {
+        expect(observedCommands.has(decision.command)).toBe(true);
+        expect(decision.reason.length).toBeGreaterThan(0);
+        expect(decision.taskCandidateId.length).toBeGreaterThan(0);
+        expect(decision.evidenceIds.length).toBeGreaterThan(0);
+      }
+    }
+
+    const human = await runCliProcess(['plan', repository], database);
+    expect(human).toMatchObject({ code: 0, stderr: '' });
+    expect(human.stdout).toContain('Verification Plan Preview (read-only)');
+    expect(human.stdout).toContain('Quick plan: READY');
+    expect(human.stdout).toContain('Full plan: READY');
+    expect(human.stdout).toContain('Skipped in Quick mode');
+
+    const composition = createApplicationComposition();
+    openCompositions.push(composition);
+    const coreResult = await composition.application.previewVerificationPlans({ repository });
+
+    const protocol = startProtocolProcess(database);
+    const request = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'plan-equivalence',
+      method: 'verification.plan',
+      params: { repository },
+    } satisfies ProtocolRequest<'verification.plan'>;
+    protocol.send(request);
+    const terminal = decodeResultLine(
+      'verification.plan',
+      (
+        await protocol.waitFor(
+          ({ message }) => message.id === request.id && 'result' in message,
+          'verification plan terminal result',
+        )
+      ).line,
+    );
+    if ('error' in terminal) throw new Error(terminal.error.message);
+    const execution = await protocol.finish();
+
+    expect(execution).toMatchObject({ code: 0, stderr: '' });
+    expect(
+      protocol.records.some(
+        ({ message }) =>
+          message.id === request.id &&
+          'event' in message &&
+          message.event === 'profile.progress' &&
+          message.data.phase === 'sensors',
+      ),
+    ).toBe(true);
+    expect(withoutVolatilePlanFields(terminal.result)).toStrictEqual(
+      withoutVolatilePlanFields(cliResult),
+    );
+    expect(withoutVolatilePlanFields(coreResult)).toStrictEqual(
+      withoutVolatilePlanFields(cliResult),
+    );
+    expect(await git(repository, 'status', '--short', '--untracked-files=all')).toBe(statusBefore);
+    await expect(readFile(commandMarker, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(
+      readFile(join(repository, '.verify', 'project.yml'), 'utf8'),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(readFile(database, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(readFile(`${database}-wal`, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(readFile(`${database}-shm`, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  }, 30_000);
+
+  it('cancels a registered plan preview only through operation.cancel', async () => {
+    const { repository, database } = await fixture('project-intelligence/node-vite-vitest');
+    const protocol = startProtocolProcess(database);
+    const planRequest = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'cancel-plan',
+      method: 'verification.plan',
+      params: { repository },
+    } satisfies ProtocolRequest<'verification.plan'>;
+    const verificationSpecificCancel = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'wrong-plan-cancel',
+      method: 'verification.cancel',
+      params: { targetRequestId: planRequest.id },
+    } satisfies ProtocolRequest<'verification.cancel'>;
+    const acceptedCancel = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'general-plan-cancel',
+      method: 'operation.cancel',
+      params: { targetRequestId: planRequest.id },
+    } satisfies ProtocolRequest<'operation.cancel'>;
+    const duplicateCancel = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'general-plan-cancel-again',
+      method: 'operation.cancel',
+      params: { targetRequestId: planRequest.id },
+    } satisfies ProtocolRequest<'operation.cancel'>;
+
+    protocol.send(planRequest);
+    protocol.send(verificationSpecificCancel);
+    protocol.send(acceptedCancel);
+    protocol.send(duplicateCancel);
+
+    expect(
+      decodeResultLine(
+        'verification.cancel',
+        (
+          await protocol.waitFor(
+            ({ message }) => message.id === verificationSpecificCancel.id && 'result' in message,
+            'verification-specific plan cancellation rejection',
+          )
+        ).line,
+      ),
+    ).toMatchObject({ result: { accepted: false } });
+    expect(
+      decodeResultLine(
+        'operation.cancel',
+        (
+          await protocol.waitFor(
+            ({ message }) => message.id === acceptedCancel.id && 'result' in message,
+            'general plan cancellation acknowledgement',
+          )
+        ).line,
+      ),
+    ).toMatchObject({ result: { accepted: true } });
+    expect(
+      decodeResultLine(
+        'operation.cancel',
+        (
+          await protocol.waitFor(
+            ({ message }) => message.id === duplicateCancel.id && 'result' in message,
+            'duplicate plan cancellation rejection',
+          )
+        ).line,
+      ),
+    ).toMatchObject({ result: { accepted: false } });
+
+    const terminal = decodeResultLine(
+      'verification.plan',
+      (
+        await protocol.waitFor(
+          ({ message }) => message.id === planRequest.id && 'result' in message,
+          'cancelled plan terminal result',
+        )
+      ).line,
+    );
+    expect(terminal).toMatchObject({ result: { status: 'cancelled' } });
+
+    const execution = await protocol.finish();
+    expect(execution).toMatchObject({ code: 0, stderr: '' });
+    await expect(readFile(database, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  }, 15_000);
+
   it('exposes one read-only Node/Vite/Vitest profile through CLI and protocol without storage', async () => {
     const { repository, database } = await fixture('project-intelligence/node-vite-vitest');
     const commandMarker = join(repository, 'profiling-command-executed.marker');

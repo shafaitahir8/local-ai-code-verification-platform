@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { describe, expect, it, vi } from 'vitest';
@@ -73,7 +73,11 @@ describe('desktop dashboard', () => {
     expect(
       screen.getByRole('heading', { name: 'Observed command candidates' }),
     ).toBeInTheDocument();
-    expect(screen.getByText('vitest run')).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('list', { name: 'Observed project scripts' })).getByText(
+        'vitest run',
+      ),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(
         'Evidence only - these commands were not run and cannot be started from this view.',
@@ -84,6 +88,44 @@ describe('desktop dashboard', () => {
     expect(screen.getByText('A Vite configuration file is present.')).toBeInTheDocument();
     expect(screen.queryByText(/\bAI\b/u)).not.toBeInTheDocument();
   });
+
+  it('automatically renders distinct read-only Quick and Full plan previews with reasons', async () => {
+    const client = createMockEngineClient({ latencyMs: 0 });
+    const request = vi.spyOn(client, 'request');
+    render(
+      <App
+        client={client}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\plan-preview"
+      />,
+    );
+
+    const card = await screen.findByRole('region', { name: 'Verification Plan' });
+    const quickSelected = within(card).getByRole('list', { name: 'Quick selected checks' });
+    const quickSkipped = within(card).getByRole('list', { name: 'Quick skipped checks' });
+    const fullSelected = within(card).getByRole('list', { name: 'Full selected checks' });
+
+    expect(quickSelected).toHaveTextContent('Run test (test)');
+    expect(quickSelected).toHaveTextContent('Run lint (lint)');
+    expect(quickSelected).not.toHaveTextContent('Run build (build)');
+    expect(quickSkipped).toHaveTextContent('Run typecheck (typecheck)');
+    expect(quickSkipped).toHaveTextContent('Run build (build)');
+    expect(quickSkipped).toHaveTextContent('reserved for the Full plan');
+    expect(fullSelected).toHaveTextContent('Run test (test)');
+    expect(fullSelected).toHaveTextContent('Run lint (lint)');
+    expect(fullSelected).toHaveTextContent('Run typecheck (typecheck)');
+    expect(fullSelected).toHaveTextContent('Run build (build)');
+    expect(within(card).getAllByText('Ready')).toHaveLength(2);
+    expect(card).toHaveTextContent('deterministic project profile');
+    expect(card).toHaveTextContent(
+      'Preview only — no check was run, and no repository, configuration, or history state was written.',
+    );
+    expect(within(card).queryByRole('button')).not.toBeInTheDocument();
+    expect(request.mock.calls.some(([method]) => method === 'verification.plan')).toBe(true);
+    expect(request.mock.calls.some(([method]) => method === 'project.profile')).toBe(false);
+    expect(request.mock.calls.some(([method]) => method === 'verification.run')).toBe(false);
+  });
+
   it('keeps conflicting evidence explicit instead of selecting a hidden winner', async () => {
     render(
       <App
@@ -102,7 +144,7 @@ describe('desktop dashboard', () => {
   it('keeps the existing dashboard usable when project profiling fails', async () => {
     render(
       <App
-        client={createMockEngineClient({ latencyMs: 0, failMethod: 'project.profile' })}
+        client={createMockEngineClient({ latencyMs: 0, failMethod: 'verification.plan' })}
         pickRepository={async () => null}
         initialRepository="C:\\work\\profile-error"
       />,
@@ -112,7 +154,10 @@ describe('desktop dashboard', () => {
     expect(screen.getByRole('heading', { name: 'profile-error' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Configured checks' })).toBeInTheDocument();
     expect(
-      screen.getByText(/MOCK_ERROR: Mock failure while calling project\.profile\./u),
+      screen.getAllByText(/MOCK_ERROR: Mock failure while calling verification\.plan\./u).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getByText(/A verification plan preview could not be produced\./u),
     ).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
@@ -127,6 +172,8 @@ describe('desktop dashboard', () => {
     );
 
     expect(await screen.findByText('Partial profile')).toBeInTheDocument();
+    expect(screen.getAllByText('Unavailable')).toHaveLength(2);
+    expect(screen.queryByRole('list', { name: 'Quick selected checks' })).not.toBeInTheDocument();
     expect(screen.getByText(/A scan budget was reached/u)).toBeInTheDocument();
     expect(
       screen.getByText('The entry limit was reached; this profile has partial coverage.'),
@@ -157,7 +204,12 @@ describe('desktop dashboard', () => {
       screen.getByText('Refresh cancelled; the last completed profile remains displayed.'),
     ).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Deterministic facts' })).toBeInTheDocument();
-    expect(screen.getByText('vitest run')).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('list', { name: 'Observed project scripts' })).getByText(
+        'vitest run',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Quick selected checks' })).toBeInTheDocument();
   });
 
   it('does not report cancellation when interruption lacks a terminal result', async () => {
@@ -183,8 +235,8 @@ describe('desktop dashboard', () => {
       screen.getByText('Refresh failed; the last completed profile remains displayed.'),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/INTERRUPTED: The mock engine request was interrupted\./u),
-    ).toBeInTheDocument();
+      screen.getAllByText(/INTERRUPTED: The mock engine request was interrupted\./u).length,
+    ).toBeGreaterThan(0);
     expect(screen.queryByText('Scan stopped')).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Deterministic facts' })).toBeInTheDocument();
   });
@@ -207,7 +259,12 @@ describe('desktop dashboard', () => {
 
     expect(await screen.findByRole('heading', { name: 'new-profile' })).toBeInTheDocument();
     expect(await screen.findByText('Profile ready')).toBeInTheDocument();
-    expect(screen.getByText('C:\\work\\new-profile')).toBeInTheDocument();
+    expect(
+      screen.getByText('C:\\work\\new-profile', { selector: '.path-text' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('C:\\work\\new-profile', { selector: '.plan-preview-context code' }),
+    ).toBeInTheDocument();
     expect(screen.queryByText('C:\\work\\old-profile')).not.toBeInTheDocument();
   });
 

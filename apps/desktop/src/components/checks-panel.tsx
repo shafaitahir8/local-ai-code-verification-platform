@@ -23,7 +23,7 @@ export function ChecksPanel({
     <Card aria-labelledby="checks-title">
       <CardHeader>
         <div>
-          <p className="eyebrow">Execution plan</p>
+          <p className="eyebrow">Configured execution</p>
           <CardTitle id="checks-title">
             {config.exists ? 'Configured checks' : 'Suggested checks'}
           </CardTitle>

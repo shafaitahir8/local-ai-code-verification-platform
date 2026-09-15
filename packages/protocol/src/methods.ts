@@ -4,6 +4,7 @@ import {
   gateResultSchema,
   projectProfileResultSchema,
   repositoryChangeSchema,
+  verificationPlanPreviewResultSchema,
   verificationRunSchema,
 } from './domain-schemas.js';
 
@@ -55,6 +56,7 @@ export const projectDiscoveryResultSchema = z.strictObject({
 export const protocolParamsSchemas = {
   'project.discover': repositoryParamsSchema,
   'project.profile': repositoryParamsSchema,
+  'verification.plan': repositoryParamsSchema,
   'config.get': repositoryParamsSchema,
   'config.init': repositoryParamsSchema.extend({ force: z.boolean().optional() }),
   'repository.inspect': repositoryParamsSchema,
@@ -70,6 +72,7 @@ export const protocolParamsSchemas = {
 export const protocolResultSchemas = {
   'project.discover': projectDiscoveryResultSchema,
   'project.profile': projectProfileResultSchema,
+  'verification.plan': verificationPlanPreviewResultSchema,
   'config.get': z.strictObject({
     exists: z.boolean(),
     path: z.string().min(1),

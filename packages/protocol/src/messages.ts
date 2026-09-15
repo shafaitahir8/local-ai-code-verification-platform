@@ -28,6 +28,7 @@ function requestSchema<Method extends ProtocolMethod>(method: Method) {
 export const protocolRequestSchema = z.discriminatedUnion('method', [
   requestSchema('project.discover'),
   requestSchema('project.profile'),
+  requestSchema('verification.plan'),
   requestSchema('config.get'),
   requestSchema('config.init'),
   requestSchema('repository.inspect'),

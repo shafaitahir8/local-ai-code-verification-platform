@@ -3,6 +3,13 @@ import type { ProtocolEventMessage, ProtocolResultMap } from '@verify/protocol';
 export type DiscoveryResult = ProtocolResultMap['project.discover'];
 export type ProjectProfileResult = ProtocolResultMap['project.profile'];
 export type ProjectProfile = Extract<ProjectProfileResult, { status: 'completed' }>['profile'];
+export type VerificationPlanResult = ProtocolResultMap['verification.plan'];
+export type VerificationPlanPreview = Extract<
+  VerificationPlanResult,
+  { status: 'completed' }
+>['preview'];
+export type VerificationPlan =
+  VerificationPlanPreview['plans'][keyof VerificationPlanPreview['plans']];
 export type ProjectProfileProgress = Extract<
   ProtocolEventMessage,
   { event: 'profile.progress' }

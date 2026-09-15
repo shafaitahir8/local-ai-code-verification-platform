@@ -35,8 +35,19 @@ are unapproved task candidates, not executable policy; the static-site preview f
 capability, not a command. Pytest is not inferred from filenames alone, and declared workspace or
 test/run alternatives remain visible without a guessed default. A scan that reaches a configured
 budget returns an explicit partial profile, while a stopped scan returns a distinct cancelled
-result. Automatic planning, configuration schema version 2, and AI are not implemented by these
-slices.
+result. Configuration schema version 2 and AI are not implemented by these slices.
+
+## Iteration 6 preview status
+
+Iteration 6 slice 6A adds a read-only deterministic verification-plan preview for complete,
+unambiguous, single-root Node/Vite/Vitest profiles. It shows distinct Quick and Full plans, keeps
+selected and skipped observed checks visible, and explains each decision with capability and file
+evidence. Quick favors confirmed tests and lint; Full also includes eligible typecheck and build
+checks. Missing or conflicting evidence fails closed, and no command is invented.
+
+This preview does not execute checks, write `.verify/project.yml`, initialize run-history storage,
+persist a plan, create an approval, or affect PASS/WARN/BLOCK. Schema-v2 migration, approval
+receipts, accepted-policy persistence, and AI remain later slices.
 
 ## Architecture
 
@@ -86,6 +97,7 @@ The first-class commands are:
     verify init
     verify discover
     verify understand
+    verify plan
     verify inspect
     verify run
     verify run --json
@@ -97,6 +109,7 @@ From the workspace during development, use the root wrapper and pass the target 
     pnpm verify init C:\path\to\repository
     pnpm verify discover C:\path\to\repository
     pnpm verify understand C:\path\to\repository
+    pnpm verify plan C:\path\to\repository
     pnpm verify inspect C:\path\to\repository
     pnpm verify run C:\path\to\repository
     pnpm verify history C:\path\to\repository
@@ -108,6 +121,9 @@ The equivalent package command is **pnpm --filter @verify/cli dev COMMAND**. Aft
 - **verify understand** runs the bounded deterministic scan and reports the project profile without
   executing discovered commands or writing repository, configuration, or history state. Use
   **--json** for the protocol-equivalent typed result; interrupting the scan exits with code 3.
+- **verify plan** performs the same bounded scan and shows read-only Quick and Full recommendations,
+  including selected/skipped reasons and evidence. Use **--json** for the protocol-equivalent typed
+  result; it runs no check and saves no plan.
 - **verify inspect** reports root, branch, changed files, staged/unstaged state, additions, deletions, and status.
 - **verify run** validates configuration, shows and executes configured commands, streams progress, stores the normalized run, and evaluates the gate.
 - **verify run --json** writes stable machine-readable output without human progress text on stdout.
@@ -170,9 +186,10 @@ Operational errors remain separate from gate success. The interface always commu
 
 The Tauri dashboard supports selecting a repository, reviewing detected project information and Git
 changes, initializing configuration, reviewing checks, running verification with live progress,
-viewing the final gate, and reading recent local history. Opening a repository also starts the
-bounded deterministic profile scan. **Understand Project** refreshes it, **Stop project scan**
-cancels only that correlated operation, and expandable evidence explains each detection.
+viewing the final gate, and reading recent local history. Opening a repository starts one bounded
+deterministic scan that supplies both the project profile and the read-only Quick/Full plan preview.
+**Understand Project** refreshes that matching pair, **Stop project scan** cancels only the
+correlated operation, and expandable evidence explains each detection and recommendation.
 
 Run the browser UI with **pnpm --filter @verify/desktop dev**. With Rust and the platform-specific Tauri prerequisites installed, run the native application with **pnpm --filter @verify/desktop tauri dev** and build it with **pnpm --filter @verify/desktop desktop:build**.
 

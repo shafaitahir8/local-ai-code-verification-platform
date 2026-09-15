@@ -1,4 +1,8 @@
-import type { ProjectProfileResult, VerificationRun } from '@verify/domain';
+import type {
+  ProjectProfileResult,
+  VerificationPlanPreviewResult,
+  VerificationRun,
+} from '@verify/domain';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -88,11 +92,25 @@ function completedProfile(): ProjectProfileResult {
       },
       capabilities: [
         {
+          id: 'runtime.node',
+          kind: 'runtime',
+          name: 'Node.js',
+          confidence: 'confirmed',
+          evidenceIds: ['node.manifest.package-json'],
+        },
+        {
           id: 'framework.vite',
           kind: 'framework',
           name: 'Vite',
           confidence: 'confirmed',
           evidenceIds: ['node.config.vite'],
+        },
+        {
+          id: 'test-framework.vitest',
+          kind: 'test-framework',
+          name: 'Vitest',
+          confidence: 'confirmed',
+          evidenceIds: ['node.script.test'],
         },
       ],
       workspaceUnits: [
@@ -143,6 +161,69 @@ function completedProfile(): ProjectProfileResult {
       warnings: [],
     },
   };
+}
+
+function completedPlanPreview(): VerificationPlanPreviewResult {
+  const profileResult = completedProfile();
+  if (profileResult.status !== 'completed') {
+    throw new Error('Expected a completed profile fixture.');
+  }
+
+  const testDecision = {
+    taskCandidateId: 'task.root.test',
+    kind: 'test' as const,
+    label: 'Run test (test)',
+    command: 'vitest run',
+    workingDirectory: '.',
+    workspaceId: 'workspace.root',
+    confidence: 'confirmed' as const,
+    capabilityIds: ['test-framework.vitest'],
+    evidenceIds: ['node.script.test'],
+    reason: 'Selected from one confirmed root test task with deterministic evidence.',
+  };
+  const planProvenance = {
+    planVersion: 1 as const,
+    status: 'ready' as const,
+    repositoryRoot: profileResult.profile.repositoryRoot,
+    profileVersion: profileResult.profile.profileVersion,
+    profileGeneratedAt: profileResult.profile.generatedAt,
+    profileCompleteness: profileResult.profile.completeness,
+    recommendationSource: 'deterministic-project-profile' as const,
+  };
+
+  return {
+    status: 'completed',
+    preview: {
+      profile: profileResult.profile,
+      plans: {
+        quick: {
+          ...planProvenance,
+          mode: 'quick',
+          statusReason: 'One evidence-backed check is selected for the quick preview.',
+          selectedChecks: [testDecision],
+          skippedChecks: [],
+        },
+        full: {
+          ...planProvenance,
+          mode: 'full',
+          statusReason: 'One evidence-backed check is selected for the full preview.',
+          selectedChecks: [testDecision],
+          skippedChecks: [],
+        },
+      },
+    },
+  };
+}
+
+function expectInvalidPlanPreview(result: unknown): void {
+  expect(() =>
+    encodeResult('verification.plan', {
+      protocolVersion: 1,
+      id: 'invalid-plan-source',
+      // Runtime validation is deliberately tested with untrusted input.
+      result: result as VerificationPlanPreviewResult,
+    }),
+  ).toThrow(ProtocolDecodeError);
 }
 
 describe('protocol request codec', () => {
@@ -215,6 +296,17 @@ describe('protocol request codec', () => {
     ).toMatchObject({ result: { accepted: true } });
   });
 
+  it('round-trips the additive read-only verification planning request', () => {
+    const request = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'plan-1',
+      method: 'verification.plan',
+      params: { repository: '/workspace/example' },
+    } satisfies ProtocolRequest<'verification.plan'>;
+
+    expect(decodeRequestLine(encodeRequest(request))).toEqual(request);
+  });
+
   it('rejects incompatible versions, unknown methods, extra fields, and malformed params', () => {
     expect(() =>
       decodeRequestLine(
@@ -264,6 +356,268 @@ describe('protocol request codec', () => {
 });
 
 describe('server message codec', () => {
+  it('round-trips completed and cancelled verification plan previews', () => {
+    const completed = completedPlanPreview();
+
+    expect(
+      decodeResultLine(
+        'verification.plan',
+        encodeResult('verification.plan', {
+          protocolVersion: 1,
+          id: 'plan-1',
+          result: completed,
+        }),
+      ),
+    ).toEqual({ protocolVersion: 1, id: 'plan-1', result: completed });
+    expect(
+      decodeResultLine(
+        'verification.plan',
+        encodeResult('verification.plan', {
+          protocolVersion: 1,
+          id: 'plan-cancelled',
+          result: { status: 'cancelled' },
+        }),
+      ),
+    ).toEqual({
+      protocolVersion: 1,
+      id: 'plan-cancelled',
+      result: { status: 'cancelled' },
+    });
+  });
+
+  it('rejects verification plan decisions without reasons or known check kinds', () => {
+    const completed = completedPlanPreview();
+    if (completed.status !== 'completed') {
+      throw new Error('Expected a completed planning fixture.');
+    }
+    const decision = completed.preview.plans.quick.selectedChecks[0];
+    if (decision === undefined) {
+      throw new Error('Expected one selected planning decision.');
+    }
+
+    for (const invalidDecision of [
+      { ...decision, reason: '' },
+      { ...decision, kind: 'deploy' },
+    ]) {
+      const invalid = {
+        ...completed,
+        preview: {
+          ...completed.preview,
+          plans: {
+            ...completed.preview.plans,
+            quick: {
+              ...completed.preview.plans.quick,
+              selectedChecks: [invalidDecision],
+            },
+          },
+        },
+      };
+
+      expect(() =>
+        encodeResult('verification.plan', {
+          protocolVersion: 1,
+          id: 'invalid-plan',
+          // Runtime validation is deliberately tested with untrusted input.
+          result: invalid as unknown as VerificationPlanPreviewResult,
+        }),
+      ).toThrow(ProtocolDecodeError);
+    }
+  });
+
+  it('rejects swapped plan modes and provenance that differs from the embedded profile', () => {
+    const completed = completedPlanPreview();
+    if (completed.status !== 'completed') {
+      throw new Error('Expected a completed planning fixture.');
+    }
+
+    const invalidQuickPlans = [
+      { ...completed.preview.plans.quick, mode: 'full' },
+      { ...completed.preview.plans.quick, repositoryRoot: '/workspace/other' },
+      {
+        ...completed.preview.plans.quick,
+        profileGeneratedAt: '2026-09-15T00:00:00.000Z',
+      },
+      { ...completed.preview.plans.quick, profileCompleteness: 'partial' },
+    ];
+
+    for (const quick of invalidQuickPlans) {
+      const invalid = {
+        ...completed,
+        preview: {
+          ...completed.preview,
+          plans: { ...completed.preview.plans, quick },
+        },
+      };
+
+      expect(() =>
+        encodeResult('verification.plan', {
+          protocolVersion: 1,
+          id: 'invalid-plan-provenance',
+          // Runtime validation is deliberately tested with untrusted input.
+          result: invalid as unknown as VerificationPlanPreviewResult,
+        }),
+      ).toThrow(ProtocolDecodeError);
+    }
+  });
+
+  it('rejects plan decisions that invent or alter an observed task candidate', () => {
+    const completed = completedPlanPreview();
+    if (completed.status !== 'completed') throw new Error('Expected a completed planning fixture.');
+    const decision = completed.preview.plans.quick.selectedChecks[0];
+    if (decision === undefined) throw new Error('Expected one selected planning decision.');
+
+    for (const changedDecision of [
+      { ...decision, taskCandidateId: 'task.not-observed' },
+      { ...decision, kind: 'build' },
+      { ...decision, label: 'Invented label' },
+      { ...decision, command: 'invented command' },
+      { ...decision, workingDirectory: 'elsewhere' },
+      { ...decision, workspaceId: 'workspace.other' },
+      { ...decision, confidence: 'tentative' },
+    ]) {
+      expectInvalidPlanPreview({
+        ...completed,
+        preview: {
+          ...completed.preview,
+          plans: {
+            ...completed.preview.plans,
+            quick: { ...completed.preview.plans.quick, selectedChecks: [changedDecision] },
+          },
+        },
+      });
+    }
+
+    expectInvalidPlanPreview({
+      ...completed,
+      preview: {
+        ...completed.preview,
+        plans: {
+          ...completed.preview.plans,
+          quick: {
+            ...completed.preview.plans.quick,
+            selectedChecks: [decision],
+            skippedChecks: [decision],
+          },
+        },
+      },
+    });
+  });
+
+  it('rejects absent, fabricated, duplicate, or unrelated plan evidence', () => {
+    const completed = completedPlanPreview();
+    if (completed.status !== 'completed') throw new Error('Expected a completed planning fixture.');
+    const decision = completed.preview.plans.quick.selectedChecks[0];
+    if (decision === undefined) throw new Error('Expected one selected planning decision.');
+
+    for (const changedDecision of [
+      { ...decision, evidenceIds: [] },
+      { ...decision, evidenceIds: ['not-in-profile'] },
+      { ...decision, evidenceIds: ['node.config.vite'] },
+      { ...decision, evidenceIds: ['node.script.test', 'node.script.test'] },
+    ]) {
+      expectInvalidPlanPreview({
+        ...completed,
+        preview: {
+          ...completed.preview,
+          plans: {
+            ...completed.preview.plans,
+            quick: { ...completed.preview.plans.quick, selectedChecks: [changedDecision] },
+          },
+        },
+      });
+    }
+
+    expectInvalidPlanPreview({
+      ...completed,
+      preview: {
+        ...completed.preview,
+        plans: {
+          ...completed.preview.plans,
+          quick: {
+            ...completed.preview.plans.quick,
+            selectedChecks: [],
+            skippedChecks: [{ ...decision, evidenceIds: [] }],
+          },
+        },
+      },
+    });
+
+    expectInvalidPlanPreview({
+      ...completed,
+      preview: {
+        ...completed.preview,
+        profile: {
+          ...completed.preview.profile,
+          taskCandidates: completed.preview.profile.taskCandidates.map((candidate) =>
+            candidate.id === decision.taskCandidateId
+              ? { ...candidate, evidenceIds: [...candidate.evidenceIds, 'not-in-profile'] }
+              : candidate,
+          ),
+        },
+      },
+    });
+  });
+
+  it('rejects unresolved, duplicate, or unrelated capability sources', () => {
+    const completed = completedPlanPreview();
+    if (completed.status !== 'completed') throw new Error('Expected a completed planning fixture.');
+    const decision = completed.preview.plans.quick.selectedChecks[0];
+    if (decision === undefined) throw new Error('Expected one selected planning decision.');
+
+    for (const changedDecision of [
+      { ...decision, capabilityIds: [] },
+      { ...decision, capabilityIds: ['not-in-profile'] },
+      { ...decision, capabilityIds: ['framework.vite'] },
+      { ...decision, capabilityIds: ['test-framework.vitest', 'test-framework.vitest'] },
+    ]) {
+      expectInvalidPlanPreview({
+        ...completed,
+        preview: {
+          ...completed.preview,
+          plans: {
+            ...completed.preview.plans,
+            quick: { ...completed.preview.plans.quick, selectedChecks: [changedDecision] },
+          },
+        },
+      });
+    }
+
+    for (const capabilityEvidenceIds of [[], ['not-in-profile']]) {
+      expectInvalidPlanPreview({
+        ...completed,
+        preview: {
+          ...completed.preview,
+          profile: {
+            ...completed.preview.profile,
+            capabilities: completed.preview.profile.capabilities.map((capability) =>
+              capability.id === 'test-framework.vitest'
+                ? { ...capability, evidenceIds: capabilityEvidenceIds }
+                : capability,
+            ),
+          },
+        },
+      });
+    }
+  });
+
+  it('rejects duplicate source IDs inside a completed plan preview without changing project.profile', () => {
+    const completed = completedPlanPreview();
+    if (completed.status !== 'completed') throw new Error('Expected a completed planning fixture.');
+
+    for (const field of ['evidence', 'capabilities', 'workspaceUnits', 'taskCandidates'] as const) {
+      const sources = completed.preview.profile[field];
+      const first = sources[0];
+      if (first === undefined) throw new Error(`Expected nonempty ${field} fixture sources.`);
+      expectInvalidPlanPreview({
+        ...completed,
+        preview: {
+          ...completed.preview,
+          profile: { ...completed.preview.profile, [field]: [...sources, first] },
+        },
+      });
+    }
+  });
+
   it('round-trips typed profile progress and terminal results', () => {
     const progress: ProtocolEventMessage = {
       protocolVersion: 1,

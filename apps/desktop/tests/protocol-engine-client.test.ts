@@ -171,6 +171,39 @@ describe('ProtocolEngineClient', () => {
     );
   });
 
+  it('preserves the exact deterministic plan preview and its profiled source', async () => {
+    const repository = 'C:\\work\\plan-equivalence-project';
+    const expected = await createMockEngineClient({ latencyMs: 0 }).request('verification.plan', {
+      repository,
+    });
+    expect(expected.status).toBe('completed');
+    const transport: EngineTransport = {
+      request: async (requestLine, onChunk) => {
+        const request = decodeRequestLine(requestLine);
+        expect(request).toMatchObject({
+          protocolVersion: PROTOCOL_VERSION,
+          id: 'plan-equivalence-id',
+          method: 'verification.plan',
+          params: { repository },
+        });
+        onChunk(
+          encodeResult('verification.plan', {
+            protocolVersion: PROTOCOL_VERSION,
+            id: request.id,
+            result: expected,
+          }),
+        );
+      },
+    };
+    const client = new ProtocolEngineClient(transport, {
+      createRequestId: () => 'plan-equivalence-id',
+    });
+
+    await expect(client.request('verification.plan', { repository })).resolves.toStrictEqual(
+      expected,
+    );
+  });
+
   it('returns a persisted cancelled terminal after the caller requests interruption', async () => {
     const repository = 'C:\\work\\cancelled-project';
     const completed = await createMockEngineClient({ latencyMs: 0 }).request('verification.run', {

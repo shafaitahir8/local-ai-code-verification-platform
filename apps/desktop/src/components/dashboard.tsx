@@ -5,6 +5,7 @@ import { GateHero } from './gate-hero.js';
 import { HistoryPanel } from './history-panel.js';
 import { ProjectOverview } from './project-overview.js';
 import { RunPanel } from './run-panel.js';
+import { VerificationPlanPreviewCard } from './verification-plan-preview.js';
 
 export function Dashboard({ controller }: { readonly controller: DashboardController }) {
   const { config, discovery, inspection } = controller;
@@ -33,6 +34,12 @@ export function Dashboard({ controller }: { readonly controller: DashboardContro
           profileError={controller.profileError}
           onRefresh={() => void controller.understandProject()}
           onStop={controller.stopProjectProfile}
+        />
+      </div>
+      <div className="dashboard-grid__wide">
+        <VerificationPlanPreviewCard
+          preview={controller.planPreview}
+          profilePhase={controller.profilePhase}
         />
       </div>
       <ChangePanel inspection={inspection} />

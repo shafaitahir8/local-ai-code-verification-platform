@@ -9,6 +9,7 @@ transformations.
 
 - Project identity and normalized verification models.
 - Versioned project-profile, evidence, confidence, scan, progress, and cancellation records.
+- Versioned preview-only verification-plan records with selected/skipped decisions and provenance.
 - Repository change, Git reference, and line-statistic models.
 - PASS/WARN/BLOCK status records and summary helpers.
 - Predicates for terminal and unsuccessful check states.
@@ -34,6 +35,8 @@ and repository change snapshots.
 - Framework-specific evidence is expressed through generic findings and artifacts.
 - Project-profile capabilities use portable categories, stable evidence references, and distinguish
   a completed partial scan from a cancelled operation with no profile.
+- Verification plans preserve observed task candidates and source references without granting
+  execution or approval authority.
 - Timestamps are ISO-8601 strings at package boundaries.
 
 ## Security and privacy

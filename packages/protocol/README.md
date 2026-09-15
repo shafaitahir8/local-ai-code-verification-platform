@@ -43,6 +43,7 @@ owned by its source package.
 
 - `project.discover`
 - `project.profile`
+- `verification.plan`
 - `config.get`
 - `config.init`
 - `repository.inspect`
@@ -60,6 +61,12 @@ malformed input fails explicitly; it is never treated as console output or silen
 `profile.progress` and returns either `{ "status": "completed", "profile": ... }` or
 `{ "status": "cancelled" }`. A budget-limited scan is a completed partial profile, not a cancelled
 result.
+
+`verification.plan` runs the same bounded profile operation and projects its completed profile into
+deterministic Quick and Full plan previews. It reuses `profile.progress` while profiling and returns
+either `{ "status": "completed", "preview": ... }` or `{ "status": "cancelled" }`. The preview
+copies observed task candidates and their evidence into selected or skipped decisions with reasons;
+the method executes no command and persists no profile, plan, configuration, or run history.
 
 `verification.cancel` is an additive version 1 control request. It has its own request ID and names
 the active `verification.run` request in `params.targetRequestId`. Its terminal result is

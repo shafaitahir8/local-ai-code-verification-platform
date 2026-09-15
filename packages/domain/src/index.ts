@@ -59,3 +59,20 @@ export {
   summarizeCheckResults,
   VERIFICATION_CHECK_STATUSES,
 } from './verification.js';
+export {
+  VERIFICATION_PLAN_CHECK_KINDS,
+  VERIFICATION_PLAN_MODES,
+  VERIFICATION_PLAN_RECOMMENDATION_SOURCES,
+  VERIFICATION_PLAN_STATUSES,
+  VERIFICATION_PLAN_VERSION,
+} from './verification-plan.js';
+export type {
+  VerificationPlan,
+  VerificationPlanCheckDecision,
+  VerificationPlanCheckKind,
+  VerificationPlanMode,
+  VerificationPlanPreview,
+  VerificationPlanPreviewResult,
+  VerificationPlanRecommendationSource,
+  VerificationPlanStatus,
+} from './verification-plan.js';

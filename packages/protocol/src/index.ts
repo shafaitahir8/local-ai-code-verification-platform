@@ -18,6 +18,10 @@ export {
   repositoryChangeSchema,
   verificationCheckResultSchema,
   verificationCheckSchema,
+  verificationPlanCheckDecisionSchema,
+  verificationPlanPreviewResultSchema,
+  verificationPlanPreviewSchema,
+  verificationPlanSchema,
   verificationRunSchema,
 } from './domain-schemas.js';
 export {

@@ -49,8 +49,9 @@ The canonical product reset and delivery sequence are documented in
 **docs/planning/REVISED-PRODUCT-PATH-POST-V0.1.0.md** and
 **docs/tasks/IMPLEMENTATION-PLAN-POST-V0.1.0.md**. ADR-009 through ADR-014 govern the new authority,
 sensor, configuration, cancellation, provider, and launch boundaries. These are roadmap decisions.
-The package table and primary flows below describe the v0.1.0 system plus the implemented Iteration
-5 project-intelligence foundation; later roadmap behavior remains prospective.
+The package table and primary flows below describe the v0.1.0 system, the implemented Iteration 5
+project-intelligence foundation, and the preview-only first slice of Iteration 6; later roadmap
+behavior remains prospective.
 
 Iteration 5 adds portable profile types to **@verify/domain**, a `ProjectProfilerPort` to
 **@verify/core**, and one documented project-intelligence implementation containing the bounded
@@ -81,8 +82,8 @@ There is one implementation of repository inspection, configuration, verificatio
 
 | Package                             | Owns                                                                                                           | Must not own                                                   |
 | ----------------------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| **@verify/domain**                  | Infrastructure-independent entities, result types, findings, artifacts, gate types                             | Git commands, YAML, SQLite, subprocesses, React, Tauri         |
-| **@verify/core**                    | Initialize, discover, inspect, run, gate, and history use cases; application ports                             | Concrete drivers or interface rendering                        |
+| **@verify/domain**                  | Infrastructure-independent entities, result types, findings, artifacts, gates, and plan records                | Git commands, YAML, SQLite, subprocesses, React, Tauri         |
+| **@verify/core**                    | Initialize, discover, profile, preview-plan, inspect, run, gate, and history use cases; application ports      | Concrete drivers or interface rendering                        |
 | **@verify/config**                  | **.verify/project.yml**, schema v1, validation, safe writes, and project-marker/script discovery               | Command execution or gate decisions                            |
 | **@verify/project-intelligence**    | Bounded read-only inventory, sensor coordination, Node/static/Python detection, and declared workspace mapping | Project command execution, policy mutation, persistence, or AI |
 | **@verify/repository**              | Git root discovery, branch/status/diff parsing, and changed-file normalization                                 | Project-marker discovery, verification scheduling, or UI state |
@@ -150,6 +151,25 @@ create verification plans, approve or execute discovered scripts, migrate config
 repository/configuration/database state, or invoke AI. Existing configuration discovery remains a
 separate schema-v1 compatibility path.
 
+### Preview verification plans (Iteration 6 slice 6A)
+
+1. A caller requests a plan preview for a repository; core performs one bounded project-profile
+   operation through the existing `ProjectProfilerPort`.
+2. A pure core planner accepts only a complete, unambiguous, single-root Node/Vite/Vitest profile
+   for this slice. Unsupported, partial, ambiguous, or malformed evidence fails closed.
+3. The planner copies eligible observed test, lint, typecheck, and build task candidates into
+   versioned Quick and Full records. It never synthesizes a command.
+4. Quick selects confirmed test and lint candidates and explains why typecheck and build remain
+   skipped. Full selects every eligible confirmed check. Multiple candidates of one kind remain
+   skipped rather than guessed.
+5. Protocol, CLI, native bridge, and desktop expose the same profile-plus-plan result. The profile
+   phase remains cancellable through `operation.cancel`; the pure planner itself is synchronous and
+   bounded.
+
+This slice is preview-only. It does not execute a selected check, write `.verify/project.yml`,
+create an approval receipt, initialize SQLite, persist a plan, or affect PASS/WARN/BLOCK. It records
+profile version and generation time because no stable profile digest exists yet.
+
 ### Run verification
 
 1. Core loads and validates project configuration.
@@ -208,12 +228,13 @@ Standard output in protocol mode is reserved for protocol frames. Diagnostic log
 
 Initial methods cover project discovery, config read/init, repository inspection, verification run,
 graceful verification cancellation, latest gate, and run history. Iteration 5 additively introduces
-`project.profile`, typed `profile.progress` events, and `operation.cancel`; existing protocol-v1
-methods and `verification.cancel` retain their meaning. A cancellation control frame has its own
-request ID and targets the correlated active request. Accepted profile cancellation terminates with
-the profile-specific cancelled result and creates no verification run. Accepted verification
-cancellation must still end in the original run's persisted `cancelled` terminal result. The native
-bridge applies method-appropriate cancellation validation, bounded shutdown, and Windows Job Object
+`project.profile`, typed `profile.progress` events, and `operation.cancel`; Iteration 6 slice 6A adds
+the read-only `verification.plan` method. Existing protocol-v1 methods and `verification.cancel`
+retain their meaning. A cancellation control frame has its own request ID and targets the correlated
+active request. Accepted profile or plan-preview cancellation terminates with that operation's
+non-persisted cancelled result and creates no verification run. Accepted verification cancellation
+must still end in the original run's persisted `cancelled` terminal result. The native bridge
+applies method-appropriate cancellation validation, bounded shutdown, and Windows Job Object
 containment if cooperative cancellation or normal engine exit fails.
 
 ## Extension model
@@ -232,11 +253,11 @@ No future feature may make deterministic verification depend on AI availability.
 ## Test architecture
 
 - Unit tests cover parsing, validation, transformations, bounded Node/static/Python/workspace
-  profiling, Vite-versus-static precedence, ambiguity, discovery, Git parsing, policy, and exit-code
-  mapping.
+  profiling, Vite-versus-static precedence, ambiguity, deterministic Quick/Full planning,
+  discovery, Git parsing, policy, and exit-code mapping.
 - Adapter contract tests cover success, failure, missing executable, timeout, cancellation, output streams, working directory, and exit-code normalization.
 - Real fixture repositories cover pass, failing test, failing build, and Git-change workflows.
-- CLI integration tests exercise init, inspect, run, and gate.
+- CLI integration tests exercise init, understand, read-only plan preview, inspect, run, and gate.
 - Protocol tests validate framing, schema versions, event order, correlation, and structured errors.
 - Desktop tests prove accessibility basics and that rendered status comes from typed protocol results.
 - A protocol/core equivalence test proves the streamed terminal result is the same normalized run that the shared application persists. Native GUI/sidecar smoke validation remains a platform-specific check.

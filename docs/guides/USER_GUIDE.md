@@ -13,11 +13,17 @@ npm/pnpm/Yarn workspaces; mixed Node/Python repositories; and plain static sites
 `index.html`. The profile reports what it found and why without running project commands or changing
 the repository.
 
+Iteration 6 slice 6A also previews deterministic Quick and Full verification recommendations for a
+complete, unambiguous, single-root Node/Vite/Vitest profile. These recommendations are read-only:
+previewing never runs a check, approves a command, or saves configuration or history.
+
 ## Features
 
 - Opens a local Git repository and summarizes its branch and changed files.
 - Builds a bounded deterministic profile of supported Node, Python, workspace, and plain-static
   metadata and shows confidence, ambiguities, warnings, and supporting file evidence.
+- Previews selected and skipped checks in distinct Quick and Full plans for the supported
+  Node/Vite/Vitest slice, with a reason and source evidence for each included check.
 - Suggests checks from project metadata and stores approved commands in `.verify/project.yml`.
 - Runs configured test, lint, typecheck, build, and other generic commands with live output.
 - Applies deterministic block-or-warn policy to normalized results.
@@ -42,8 +48,9 @@ frameworks, test commands, or run commands are shown as ambiguities; none is sel
 A plain static-site detection exposes a preview capability only; it does not start a preview server
 or invent a command. Profiling never executes a command, changes `.verify/project.yml`, writes source
 files, or creates run-history records. A profile can be complete, partial because a scan budget was
-reached, or cancelled by the user. These states are shown separately. No AI, automatic verification
-plan, or schema-version-2 behavior is involved.
+reached, or cancelled by the user. These states are shown separately. No AI or schema-version-2
+behavior is involved. Planning is available only as a read-only preview for the first supported
+Node/Vite/Vitest slice; it does not make discovered commands executable.
 
 ## Before you begin
 
@@ -65,15 +72,19 @@ running checks from a repository you do not trust.
    detected.
 4. Choose **Understand Project** to refresh the profile. While it runs, review its phase and progress
    or choose **Stop project scan**. A stopped scan remains distinct from a budget-limited partial
-   profile; if a prior profile exists, it remains displayed after a cancelled refresh.
-5. Review the Git summary and the configured or suggested checks.
-6. If the repository has no configuration, review every suggested command and choose **Initialize
+   profile; if a prior profile and plan preview exist, both remain displayed after a cancelled
+   refresh.
+5. Review **Verification Plan**. Quick selects eligible test and lint checks; Full also selects
+   eligible typecheck and build checks. Expand technical evidence to see why each observed check was
+   selected or skipped. This preview has no Run, Apply, Approve, or Save action.
+6. Review the Git summary and the configured or suggested checks.
+7. If the repository has no configuration, review every suggested command and choose **Initialize
    project**. This creates `.verify/project.yml` without overwriting an existing file.
-7. Edit `.verify/project.yml` in your editor if a command, timeout, or failure policy needs to change,
+8. Edit `.verify/project.yml` in your editor if a command, timeout, or failure policy needs to change,
    then choose **Inspect again**.
-8. Choose **Run verification**. The dashboard shows live output and each completed check.
-9. Read the final gate and its reasons. Select an item under **Recent runs** to reopen persisted
-   evidence, or choose **Return to latest** to leave history view.
+9. Choose **Run verification**. The dashboard shows live output and each completed check.
+10. Read the final gate and its reasons. Select an item under **Recent runs** to reopen persisted
+    evidence, or choose **Return to latest** to leave history view.
 
 Choose **Stop run** to cancel active verification. The application waits for the engine to stop the
 current command, persist the interrupted run, and release its child processes. A confirmed cancelled
@@ -121,6 +132,7 @@ Install the workspace prerequisites, then run commands from the project root:
 ```powershell
 pnpm install
 pnpm verify understand "C:\path\to\repository"
+pnpm verify plan "C:\path\to\repository"
 pnpm verify inspect "C:\path\to\repository"
 pnpm verify run "C:\path\to\repository"
 pnpm verify gate "C:\path\to\repository"
@@ -129,8 +141,8 @@ pnpm verify history "C:\path\to\repository"
 
 Use `pnpm verify init "C:\path\to\repository"` to create configuration after reviewing discovered
 commands. `pnpm verify understand` performs the same read-only profiling exposed by the desktop;
-add `--json` for its typed protocol-equivalent result. Add `--json` to other supported commands for
-stable machine-readable output.
+`pnpm verify plan` shows the same Quick and Full preview. Add `--json` to either command for its
+typed protocol-equivalent result, or to other supported commands for stable machine-readable output.
 
 ## Local data
 
@@ -139,8 +151,9 @@ Repository policy stays in `.verify/project.yml`. Run history defaults to
 `VERIFY_DATABASE_PATH`. Stored command output may contain sensitive repository information and is
 not encrypted by v0.1.0.
 
-Project profiles are not persisted. Running only **Understand Project** does not initialize or write
-the history database, repository files, or `.verify/project.yml`.
+Project profiles and plan previews are not persisted. Running only **Understand Project** or
+`verify plan` does not initialize or write the history database, repository files, or
+`.verify/project.yml`.
 
 ## Troubleshooting
 
