@@ -4163,3 +4163,277 @@ Next safe step:
 
 - Stage the audited tracked paths plus the five named untracked files, run cached checks, and commit
   with `feat: add reviewable schema v2 migration` if the index matches this audit.
+
+## 2026-09-16 — Iteration 6 slice 6C start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Confirmed the clean 6B baseline at `44033de`, unchanged `v0.1.0`, configured `origin`, and that
+  no 6C implementation was present.
+- Defined TASK-017's approval-only boundary from ADR-011: semantic executable-policy digest, local
+  receipt state, explicit approve/revoke/status, and no execution.
+
+Affected:
+
+- `docs/tasks/TASK-017-executable-policy-approval-receipts.md` and this recovery journal.
+
+Validated:
+
+- Working tree was clean before this checkpoint; `main` was six commits ahead of `origin/main`.
+- Existing architecture places semantic hashing in configuration, orchestration in core, and local
+  approval persistence in the ordered SQLite store.
+
+Remaining:
+
+- Implement and validate the approval contract/digest, receipt migration/storage, additive
+  protocol/CLI/desktop projections, full regression, durable commit, and push.
+
+Next safe step:
+
+- Add the versioned approval domain records and canonical schema-v2 executable-policy digest with
+  focused formatting/comment and executable-change regression tests.
+
+## 2026-09-16 — Approval contract and digest
+
+Status: COMPLETE
+
+Completed:
+
+- Added portable receipt/status records and a versioned canonical SHA-256 projection of validated
+  schema-v2 executable policy; presentation-only YAML changes do not enter the hash.
+- Kept reserved launch/override fields empty-only and included them in the digest projection so a
+  later executable extension must version the projection deliberately.
+
+Affected:
+
+- `@verify/domain`, `@verify/config`, focused tests, and this journal.
+
+Validated:
+
+- Domain: 11 tests passed; config: 37 tests passed; focused typechecks and `git diff --check` passed.
+- Equivalent formatting/comments and project display-name changes hash identically; command,
+  suite type, timeout, failure policy, and Quick/Full membership/order changes hash differently.
+
+Remaining:
+
+- Add ordered local SQLite receipt storage, core orchestration, interface projections, full
+  regression, final audit, commit, and push.
+
+Next safe step:
+
+- Finish the SQLite receipt migration and repository API, including existing-data and revocation
+  history tests, before wiring core approval decisions.
+
+## 2026-09-16 — Local approval receipt storage
+
+Status: COMPLETE
+
+Completed:
+
+- Added ordered SQLite migration 2 and a local receipt repository with one active approval per
+  canonical repository root. Superseded and revoked receipts remain historical rows.
+- Kept receipt writes transactional and separate from repository YAML and verification history.
+
+Affected:
+
+- `@verify/storage` schema, migrations, repository API, tests, and package documentation.
+
+Validated:
+
+- Storage lint/typecheck/build and 15 tests passed, including populated migration-1 upgrade,
+  receipt reopen, repository isolation, rollback, revocation, and checksum drift.
+- A second root-level focused storage test and typecheck also passed.
+
+Remaining:
+
+- Complete core/interface integration, cross-interface tests, full regression, final audit, commit,
+  and push.
+
+Next safe step:
+
+- Validate core approval status/approve/revoke against the storage contract, including stale
+  digest rejection and no-command behavior.
+
+## 2026-09-16 — Core approval flow
+
+Status: COMPLETE
+
+Completed:
+
+- Added core approval status, explicit approve, and explicit revoke through narrow configuration
+  and receipt ports. A reviewed digest is required; the durable v2 policy is reread before receipt
+  persistence. Status distinguishes missing, v1 migration-required, unapproved, current, outdated,
+  and revoked states.
+
+Affected:
+
+- `@verify/core` application, ports, errors, exports, and focused tests.
+
+Validated:
+
+- Core lint/typecheck/build and 23 tests passed; stale-digest, migration-not-approval,
+  revocation, and no-command/no-run-persistence cases passed.
+
+Remaining:
+
+- Finish additive protocol/CLI/desktop projections and equivalence checks; then full regression,
+  documentation, final audit, commit, and push.
+
+Next safe step:
+
+- Run focused protocol/CLI/desktop gates and reconcile any type or behavior mismatches without
+  adding execution.
+
+## 2026-09-17 — Slice 6C recovery and final validation
+
+Status: IN PROGRESS
+
+Completed:
+
+- Recovered the uncommitted approval-only tree: canonical digest, local receipts, core flows,
+  additive protocol/CLI methods, and desktop status with a same-read command review.
+- Confirmed 6B remains at `44033de`, `v0.1.0` remains at `fb1880d`, and no 6D execution path is present.
+
+Affected:
+
+- TASK-017 source, tests, documentation, and this journal; no native/Rust source changes.
+
+Validated:
+
+- Earlier focused domain/config/core/storage/protocol checks are recorded above; the desktop
+  same-read review adjustment has not yet been revalidated.
+- Current `git diff --check` passes; all 41 modified and seven untracked paths are within 6C scope.
+
+Remaining:
+
+- Revalidate desktop, run full sequential regression, reconcile docs, perform final Git audit,
+  then commit and push only if green.
+
+Next safe step:
+
+- Run desktop lint, typecheck, and focused tests after the final review adjustment.
+
+## 2026-09-17 — Approval interfaces and revocation hardening
+
+Status: COMPLETE
+
+Completed:
+
+- Validated additive approval protocol, CLI, and desktop projections, including the same-read
+  command review in the desktop.
+- Fixed a final-audit revocation defect: an active local receipt can now be revoked by canonical
+  repository identity even while YAML is absent, version 1, or invalid. Such policy states remain
+  unable to approve or execute; restoring old YAML does not reactivate a revoked receipt.
+
+Affected:
+
+- Core/domain/protocol approval status and tests, CLI/desktop status rendering, package docs,
+  TASK-017, and this journal.
+
+Validated:
+
+- Desktop lint/typecheck and 54 tests passed after the review adjustment; after the revocation
+  fix, desktop typecheck and 54 tests passed again.
+- Core typecheck and 24 tests, protocol typecheck and 26 tests, CLI typecheck and 32 tests passed.
+
+Remaining:
+
+- Run sequential full workspace regression and final scope/Git audit; update final task status,
+  then commit and push only if all gates pass.
+
+Next safe step:
+
+- Run the full format, lint, typecheck, test, build, and diff-check gates without overlapping
+  workspace graphs.
+
+## 2026-09-17 — Full slice 6C regression start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Focused approval and interface checks are green, and TASK-017 remains authorization-state only.
+
+Affected:
+
+- Full TypeScript workspace and append-only recovery journal; Rust/Tauri source is unchanged.
+
+Validated:
+
+- Focused results are recorded in the preceding checkpoint. No full post-fix workspace gate has
+  yet been claimed as passing.
+
+Remaining:
+
+- Full sequential regression, final docs and generated-output audit, staged patch review, commit,
+  and push.
+
+Next safe step:
+
+- Run `corepack pnpm format:check`, followed by lint, typecheck, tests, and build sequentially.
+
+## 2026-09-17 — Full slice 6C regression
+
+Status: COMPLETE
+
+Completed:
+
+- Finished approval-only source and interface validation, including revocation when policy is
+  unavailable; reconciled TASK-017, architecture, package, CLI, desktop, and user documentation.
+- Confirmed this slice introduces no plan execution, smart action, AI, risk engine, or Iteration 7
+  behavior; legacy configured verification remains unchanged.
+
+Affected:
+
+- All intentional slice-6C source/tests/docs; no lockfile or Rust/Tauri-native source changes.
+
+Validated:
+
+- Sequential workspace format, lint, typecheck, tests, and all 13 builds passed. One exact-domain
+  enum expectation required an update after adding the fail-closed invalid-policy state; the full
+  test graph then passed (24/24 tasks).
+- Core 24, protocol 26, CLI 32, desktop 54, storage 15, config 38, and domain 11 tests passed.
+- `git diff --check` and generated-output scope audit passed; no project command is called by an
+  approval use case. Native gates were not rerun because native source is unchanged.
+
+Remaining:
+
+- Final staged patch review, durable commit, push to `origin/main`, and remote SHA confirmation.
+
+Next safe step:
+
+- Recheck formatting/diff after the documentation update, stage only the audited 6C paths, review
+  the cached patch and check, then commit and push if still clean.
+
+## 2026-09-17 — Slice 6C Git and scope audit
+
+Status: COMPLETE
+
+Completed:
+
+- Reviewed all modified and untracked 6C files, the full source/interface patch, lockfile scope,
+  ignore rules, and the unchanged `v0.1.0` commit. TASK-017 is marked complete.
+- Confirmed only approval contracts, digesting, local receipts, core/protocol/CLI/desktop
+  projections, tests, and documentation are changed; no smart execution or later-iteration work.
+
+Affected:
+
+- Intentional slice-6C patch and this append-only journal.
+
+Validated:
+
+- Final post-documentation format and `git diff --check` passed. No lockfile, native/Rust,
+  generated binary, installer, database, log, or build-output path is in the patch.
+- Ignored build/runtime paths remain excluded. `v0.1.0` still resolves to `fb1880d`.
+
+Remaining:
+
+- Stage and inspect the exact cached patch, create the validated 6C commit, and push/verify
+  `origin/main`.
+
+Next safe step:
+
+- Stage only the audited tracked files plus seven named untracked 6C files, run cached diff and
+  whitespace checks, then commit and push without rewriting history or moving tags.

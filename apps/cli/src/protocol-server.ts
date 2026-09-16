@@ -1,6 +1,11 @@
 import { createInterface } from 'node:readline';
 
-import { NoVerificationRunError, type VerifierApplication } from '@verify/core';
+import {
+  NoVerificationRunError,
+  PolicyApprovalStaleError,
+  PolicyApprovalUnavailableError,
+  type VerifierApplication,
+} from '@verify/core';
 import {
   ConfigAlreadyExistsError,
   ConfigMigrationStaleError,
@@ -305,6 +310,42 @@ export async function handleProtocolRequest(
         );
         return;
       }
+      case 'config.approval.status': {
+        const result = await application.getPolicyApprovalStatus(request.params.repository);
+        writer.write(
+          encodeResult('config.approval.status', {
+            protocolVersion: PROTOCOL_VERSION,
+            id: request.id,
+            result,
+          }),
+        );
+        return;
+      }
+      case 'config.approval.approve': {
+        const result = await application.approveProjectPolicy({
+          repository: request.params.repository,
+          expectedPolicyDigest: request.params.expectedPolicyDigest,
+        });
+        writer.write(
+          encodeResult('config.approval.approve', {
+            protocolVersion: PROTOCOL_VERSION,
+            id: request.id,
+            result,
+          }),
+        );
+        return;
+      }
+      case 'config.approval.revoke': {
+        const result = await application.revokeProjectPolicyApproval(request.params.repository);
+        writer.write(
+          encodeResult('config.approval.revoke', {
+            protocolVersion: PROTOCOL_VERSION,
+            id: request.id,
+            result,
+          }),
+        );
+        return;
+      }
       case 'repository.inspect': {
         const result = await application.inspectRepository(request.params.repository);
         writer.write(
@@ -448,6 +489,8 @@ export async function handleProtocolRequest(
 
 function classifyError(error: unknown): ProtocolErrorCode {
   if (error instanceof ConfigMigrationStaleError) return 'MIGRATION_STALE';
+  if (error instanceof PolicyApprovalStaleError) return 'APPROVAL_STALE';
+  if (error instanceof PolicyApprovalUnavailableError) return 'APPROVAL_UNAVAILABLE';
   if (
     error instanceof ConfigValidationError ||
     error instanceof ConfigNotFoundError ||

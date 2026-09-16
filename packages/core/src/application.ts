@@ -8,8 +8,16 @@ import type {
   ProjectConfigV2,
   ProjectDiscovery,
 } from '@verify/config';
-import { toVerificationSuites } from '@verify/config';
+import {
+  ConfigNotFoundError,
+  ConfigUnsafePathError,
+  ConfigValidationError,
+  digestExecutablePolicy,
+  reviewExecutablePolicy,
+  toVerificationSuites,
+} from '@verify/config';
 import type {
+  PolicyApprovalStatus,
   GateResult,
   ProjectProfileProgress,
   ProjectProfileResult,
@@ -20,9 +28,15 @@ import type {
 import { evaluateQualityGate } from '@verify/policy';
 import type { VerificationLifecycleEvent } from '@verify/verification';
 
-import { NoQualityGateError, NoVerificationRunError } from './errors.js';
+import {
+  NoQualityGateError,
+  NoVerificationRunError,
+  PolicyApprovalStaleError,
+  PolicyApprovalUnavailableError,
+} from './errors.js';
 import { createVerificationPlanPreview } from './planning.js';
 import type {
+  ApprovalReceiptPort,
   ConfigurationPort,
   ProjectProfilerPort,
   RepositoryPort,
@@ -36,7 +50,9 @@ export interface VerifierApplicationDependencies {
   readonly profiler: ProjectProfilerPort;
   readonly verification: VerificationExecutorPort;
   readonly runs: RunRepositoryPort;
+  readonly approvals: ApprovalReceiptPort;
   readonly createRunId?: () => string;
+  readonly createApprovalReceiptId?: () => string;
   readonly now?: () => Date;
 }
 
@@ -58,6 +74,11 @@ export interface ApplyProjectConfigMigrationRequest {
   readonly repository: string;
   readonly expectedSourceDigest: string;
   readonly expectedTargetDigest: string;
+}
+
+export interface ApproveProjectPolicyRequest {
+  readonly repository: string;
+  readonly expectedPolicyDigest: string;
 }
 
 export interface InitializeProjectRequest {
@@ -87,7 +108,9 @@ export class VerifierApplication {
   readonly #profiler: ProjectProfilerPort;
   readonly #verification: VerificationExecutorPort;
   readonly #runs: RunRepositoryPort;
+  readonly #approvals: ApprovalReceiptPort;
   readonly #createRunId: () => string;
+  readonly #createApprovalReceiptId: () => string;
   readonly #now: () => Date;
 
   public constructor(dependencies: VerifierApplicationDependencies) {
@@ -96,7 +119,9 @@ export class VerifierApplication {
     this.#profiler = dependencies.profiler;
     this.#verification = dependencies.verification;
     this.#runs = dependencies.runs;
+    this.#approvals = dependencies.approvals;
     this.#createRunId = dependencies.createRunId ?? randomUUID;
+    this.#createApprovalReceiptId = dependencies.createApprovalReceiptId ?? randomUUID;
     this.#now = dependencies.now ?? (() => new Date());
   }
 
@@ -159,6 +184,132 @@ export class VerifierApplication {
       expectedSourceDigest: request.expectedSourceDigest,
       expectedTargetDigest: request.expectedTargetDigest,
     });
+  }
+
+  public async getPolicyApprovalStatus(repository: string): Promise<PolicyApprovalStatus> {
+    const repositoryRoot = await this.#repository.resolveRoot(repository);
+    const policyPath = this.#configuration.path(repositoryRoot);
+    const policyExists = await this.#configuration.exists(repositoryRoot);
+    const receipt = await this.#approvals.getLatestApprovalReceipt(repositoryRoot);
+    if (!policyExists) {
+      return {
+        repositoryRoot,
+        policyPath,
+        policyExists: false,
+        policyVersion: null,
+        policyDigest: null,
+        review: null,
+        status: 'policy-missing',
+        receipt,
+      };
+    }
+
+    let policy: ProjectConfigV1 | ProjectConfigV2;
+    try {
+      policy = await this.#configuration.loadPolicy(repositoryRoot);
+    } catch (error) {
+      if (error instanceof ConfigNotFoundError) {
+        return {
+          repositoryRoot,
+          policyPath,
+          policyExists: false,
+          policyVersion: null,
+          policyDigest: null,
+          review: null,
+          status: 'policy-missing',
+          receipt,
+        };
+      }
+      if (!(error instanceof ConfigValidationError || error instanceof ConfigUnsafePathError)) {
+        throw error;
+      }
+      return {
+        repositoryRoot,
+        policyPath,
+        policyExists: true,
+        policyVersion: null,
+        policyDigest: null,
+        review: null,
+        status: 'policy-invalid',
+        receipt,
+      };
+    }
+    if (policy.version === 1) {
+      return {
+        repositoryRoot,
+        policyPath,
+        policyExists: true,
+        policyVersion: 1,
+        policyDigest: null,
+        review: null,
+        status: 'migration-required',
+        receipt,
+      };
+    }
+
+    const policyDigest = digestExecutablePolicy(policy);
+    const review = reviewExecutablePolicy(policy);
+    return {
+      repositoryRoot,
+      policyPath,
+      policyExists: true,
+      policyVersion: 2,
+      policyDigest,
+      review,
+      status:
+        receipt === null
+          ? 'not-approved'
+          : receipt.revokedAt !== null
+            ? 'revoked'
+            : receipt.policyDigest === policyDigest &&
+                receipt.policySchemaVersion === 2 &&
+                receipt.digestVersion === 1 &&
+                receipt.repositoryRoot === repositoryRoot
+              ? 'approved'
+              : 'outdated',
+      receipt,
+    };
+  }
+
+  public async approveProjectPolicy(
+    request: ApproveProjectPolicyRequest,
+  ): Promise<PolicyApprovalStatus> {
+    const current = await this.getPolicyApprovalStatus(request.repository);
+    if (
+      current.status === 'policy-missing' ||
+      current.status === 'policy-invalid' ||
+      current.status === 'migration-required'
+    ) {
+      throw new PolicyApprovalUnavailableError(current.status);
+    }
+    if (request.expectedPolicyDigest !== current.policyDigest) {
+      throw new PolicyApprovalStaleError();
+    }
+
+    // Read the durable document again immediately before recording local approval. Status will
+    // compare against a fresh read afterward, so a concurrent edit can never return approved.
+    const durable = await this.#configuration.loadPolicy(current.repositoryRoot);
+    if (durable.version !== 2 || digestExecutablePolicy(durable) !== current.policyDigest) {
+      throw new PolicyApprovalStaleError();
+    }
+    if (current.status !== 'approved') {
+      await this.#approvals.approvePolicyReceipt({
+        id: this.#createApprovalReceiptId(),
+        repositoryRoot: current.repositoryRoot,
+        policySchemaVersion: 2,
+        digestVersion: 1,
+        policyDigest: current.policyDigest,
+        approvedAt: this.#now().toISOString(),
+        revokedAt: null,
+      });
+    }
+    return this.getPolicyApprovalStatus(current.repositoryRoot);
+  }
+
+  public async revokeProjectPolicyApproval(repository: string): Promise<PolicyApprovalStatus> {
+    const repositoryRoot = await this.#repository.resolveRoot(repository);
+    await this.#approvals.revokeActiveApprovalReceipt(repositoryRoot, this.#now().toISOString());
+    return this.getPolicyApprovalStatus(repositoryRoot);
   }
 
   public async initializeProject(

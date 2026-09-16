@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 export const projects = sqliteTable(
@@ -112,10 +113,31 @@ export const artifacts = sqliteTable(
   ],
 );
 
+export const approvalReceipts = sqliteTable(
+  'approval_receipts',
+  {
+    rowId: integer('row_id').primaryKey({ autoIncrement: true }),
+    id: text('id').notNull().unique(),
+    repositoryRoot: text('repository_root').notNull(),
+    policySchemaVersion: integer('policy_schema_version').notNull(),
+    digestVersion: integer('digest_version').notNull(),
+    policyDigest: text('policy_digest').notNull(),
+    approvedAt: text('approved_at').notNull(),
+    revokedAt: text('revoked_at'),
+  },
+  (table) => [
+    index('approval_receipts_repository_history_idx').on(table.repositoryRoot, table.rowId),
+    uniqueIndex('approval_receipts_active_repository_unique')
+      .on(table.repositoryRoot)
+      .where(sql`revoked_at IS NULL`),
+  ],
+);
+
 export const storageSchema = {
   projects,
   verificationRuns,
   checkResults,
   findings,
   artifacts,
+  approvalReceipts,
 } as const;

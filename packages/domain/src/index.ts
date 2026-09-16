@@ -1,4 +1,11 @@
 export type { Project } from './project.js';
+export { EXECUTABLE_POLICY_DIGEST_VERSION, POLICY_APPROVAL_STATUSES } from './policy-approval.js';
+export type {
+  ApprovalReceipt,
+  ExecutablePolicyReview,
+  PolicyApprovalState,
+  PolicyApprovalStatus,
+} from './policy-approval.js';
 export {
   PROJECT_CAPABILITY_KINDS,
   PROJECT_EVIDENCE_KINDS,

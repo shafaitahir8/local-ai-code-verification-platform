@@ -1,4 +1,4 @@
-export type { ProjectRepository, RunRepository } from './contracts.js';
+export type { ApprovalReceiptRepository, ProjectRepository, RunRepository } from './contracts.js';
 export {
   createSqliteRunRepository,
   normalizeRepositoryRoot,

@@ -4,6 +4,7 @@ import { ChecksPanel } from './checks-panel.js';
 import { ConfigMigrationCard } from './config-migration.js';
 import { GateHero } from './gate-hero.js';
 import { HistoryPanel } from './history-panel.js';
+import { PolicyApprovalCard } from './policy-approval.js';
 import { ProjectOverview } from './project-overview.js';
 import { RunPanel } from './run-panel.js';
 import { VerificationPlanPreviewCard } from './verification-plan-preview.js';
@@ -51,6 +52,16 @@ export function Dashboard({ controller }: { readonly controller: DashboardContro
           error={controller.migrationError}
           onPreview={() => void controller.previewMigration()}
           onApply={() => void controller.applyMigration()}
+        />
+      </div>
+      <div className="dashboard-grid__wide">
+        <PolicyApprovalCard
+          approval={controller.approval}
+          phase={controller.approvalPhase}
+          error={controller.approvalError}
+          onApprove={() => void controller.approvePolicy()}
+          onRevoke={() => void controller.revokeApproval()}
+          onRefresh={() => void controller.refreshApproval()}
         />
       </div>
       <ChangePanel inspection={inspection} />

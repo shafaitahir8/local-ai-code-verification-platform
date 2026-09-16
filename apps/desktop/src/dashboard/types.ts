@@ -17,6 +17,7 @@ export type ProjectProfileProgress = Extract<
 export type ConfigResult = ProtocolResultMap['config.policy.get'];
 export type MigrationPreview = ProtocolResultMap['config.migrate.preview'];
 export type MigrationApplyResult = ProtocolResultMap['config.migrate.apply'];
+export type ApprovalStatus = ProtocolResultMap['config.approval.status'];
 export type InspectionResult = ProtocolResultMap['repository.inspect'];
 export type VerificationRun = ProtocolResultMap['verification.run'];
 export type LatestGateResult = ProtocolResultMap['gate.latest'];
@@ -38,3 +39,4 @@ export type RunPhase = 'idle' | 'running' | 'cancelling' | 'completed' | 'error'
 export type ProfilePhase = 'idle' | 'running' | 'cancelling' | 'completed' | 'cancelled' | 'error';
 export type MigrationPhase =
   'idle' | 'previewing' | 'ready' | 'applying' | 'applied' | 'stale' | 'error';
+export type ApprovalPhase = 'idle' | 'loading' | 'ready' | 'approving' | 'revoking' | 'error';

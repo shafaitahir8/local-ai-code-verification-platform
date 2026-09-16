@@ -7,6 +7,7 @@ export {
 } from './errors.js';
 export type { ConfigValidationIssue } from './errors.js';
 export { createSuggestedProjectConfig, discoverProject } from './discovery.js';
+export { digestExecutablePolicy, reviewExecutablePolicy } from './executable-policy-digest.js';
 export {
   getProjectConfigPath,
   initializeProjectConfig,

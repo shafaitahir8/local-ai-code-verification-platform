@@ -10,6 +10,7 @@ import type {
   ProjectDiscovery,
 } from '@verify/config';
 import type {
+  ApprovalReceipt,
   ProjectProfileProgress,
   ProjectProfileResult,
   RepositoryChange,
@@ -50,4 +51,14 @@ export interface RunRepositoryPort {
   saveRun(run: VerificationRun): Promise<VerificationRun>;
   getLatestRun(repositoryRoot: string): Promise<VerificationRun | null>;
   listRuns(repositoryRoot: string, limit?: number): Promise<VerificationRun[]>;
+}
+
+/** Local authorization evidence; distinct from verification run history and repository YAML. */
+export interface ApprovalReceiptPort {
+  getLatestApprovalReceipt(repositoryRoot: string): Promise<ApprovalReceipt | null>;
+  approvePolicyReceipt(receipt: ApprovalReceipt): Promise<ApprovalReceipt>;
+  revokeActiveApprovalReceipt(
+    repositoryRoot: string,
+    revokedAt: string,
+  ): Promise<ApprovalReceipt | null>;
 }

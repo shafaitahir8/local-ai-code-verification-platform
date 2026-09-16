@@ -987,6 +987,56 @@ button:disabled {
   font-weight: 700;
 }
 
+.approval-content {
+  padding: 0.9rem 1.25rem 1.15rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.approval-status,
+.approval-review h3 {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.approval-review {
+  border-top: 1px solid var(--border);
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+}
+
+.approval-review ul {
+  padding-left: 1.25rem;
+}
+
+.approval-review li + li {
+  margin-top: 0.4rem;
+}
+
+.approval-content code {
+  overflow-wrap: anywhere;
+}
+
+.approval-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0.9rem 0;
+}
+
+.approval-error {
+  padding: 0.75rem;
+  border: 1px solid var(--block);
+  border-radius: 0.6rem;
+  background: var(--block-soft);
+  color: var(--block);
+}
+
+.approval-boundary {
+  margin-bottom: 0;
+  font-weight: 700;
+}
+
 .signal-list {
   flex-wrap: wrap;
   gap: 0.45rem;

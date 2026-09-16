@@ -1,5 +1,6 @@
 export {
   type ApplyProjectConfigMigrationRequest,
+  type ApproveProjectPolicyRequest,
   type ConfigurationState,
   type InitializeProjectRequest,
   type ProfileProjectRequest,
@@ -10,8 +11,14 @@ export {
   type VerifierApplicationDependencies,
 } from './application.js';
 export { createVerificationPlan, createVerificationPlanPreview } from './planning.js';
-export { NoQualityGateError, NoVerificationRunError } from './errors.js';
+export {
+  NoQualityGateError,
+  NoVerificationRunError,
+  PolicyApprovalStaleError,
+  PolicyApprovalUnavailableError,
+} from './errors.js';
 export type {
+  ApprovalReceiptPort,
   ConfigurationPort,
   ProjectProfilerPort,
   RepositoryPort,

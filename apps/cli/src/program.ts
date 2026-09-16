@@ -11,6 +11,7 @@ import {
   formatInspection,
   formatProjectProfile,
   formatProjectConfigMigrationPreview,
+  formatPolicyApprovalStatus,
   formatRun,
   formatVerificationPlanPreview,
 } from './format.js';
@@ -169,6 +170,47 @@ export function createProgram(context: CliContext): Command {
         else io.writeOut(line(formatProjectConfigMigrationPreview(preview)));
       },
     );
+
+  const approval = config
+    .command('approval')
+    .description('Review local executable-policy approval');
+  approval
+    .command('status')
+    .description('Inspect current policy and local approval without changing either')
+    .argument('[repository]', 'path inside the Git repository', '.')
+    .option('--json', 'emit the protocol-equivalent approval status as JSON')
+    .action(async (repository: string, options: JsonOption) => {
+      const result = await application.getPolicyApprovalStatus(repository);
+      if (options.json === true) writeJson(io, result);
+      else io.writeOut(line(formatPolicyApprovalStatus(result)));
+    });
+  approval
+    .command('approve')
+    .description('Explicitly approve the reviewed current executable policy')
+    .argument('[repository]', 'path inside the Git repository', '.')
+    .option('--expected-digest <digest>', 'semantic policy digest from a reviewed status')
+    .option('--json', 'emit the protocol-equivalent approval status as JSON')
+    .action(async (repository: string, options: JsonOption & { expectedDigest?: string }) => {
+      if (options.expectedDigest === undefined) {
+        throw new Error('Approval requires --expected-digest from a reviewed policy status.');
+      }
+      const result = await application.approveProjectPolicy({
+        repository,
+        expectedPolicyDigest: options.expectedDigest,
+      });
+      if (options.json === true) writeJson(io, result);
+      else io.writeOut(line(formatPolicyApprovalStatus(result)));
+    });
+  approval
+    .command('revoke')
+    .description('Explicitly revoke local executable-policy approval')
+    .argument('[repository]', 'path inside the Git repository', '.')
+    .option('--json', 'emit the protocol-equivalent approval status as JSON')
+    .action(async (repository: string, options: JsonOption) => {
+      const result = await application.revokeProjectPolicyApproval(repository);
+      if (options.json === true) writeJson(io, result);
+      else io.writeOut(line(formatPolicyApprovalStatus(result)));
+    });
 
   program
     .command('understand')

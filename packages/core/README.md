@@ -4,7 +4,8 @@
 
 Owns the deterministic application use cases shared by every interface: profile, preview Quick/Full
 verification plans, inspect project policy, preview/apply an explicit configuration migration,
-discover, initialize, inspect, run verification, retrieve the latest gate, and list history. It
+inspect/approve/revoke local executable-policy approval, discover, initialize, inspect, run
+verification, retrieve the latest gate, and list history. It
 protects the boundary between interface composition and application behavior.
 
 ## Public API
@@ -13,10 +14,14 @@ protects the boundary between interface composition and application behavior.
 - Pure `createVerificationPlan` and `createVerificationPlanPreview` transformations.
 - `getProjectPolicy`, `previewProjectConfigMigration`, and `applyProjectConfigMigration` resolve
   the canonical repository root and delegate versioned policy operations to `ConfigurationPort`.
-- `ProjectProfilerPort`, `ConfigurationPort`, `RepositoryPort`, `VerificationExecutorPort`, and
-  `RunRepositoryPort`: application-facing boundary contracts.
+- `getPolicyApprovalStatus`, `approveProjectPolicy`, and `revokeProjectPolicyApproval` combine a
+  freshly validated schema-v2 policy digest with a local `ApprovalReceiptPort`; these methods do
+  not execute a plan or suite.
+- `ProjectProfilerPort`, `ConfigurationPort`, `RepositoryPort`, `VerificationExecutorPort`,
+  `RunRepositoryPort`, and `ApprovalReceiptPort`: application-facing boundary contracts.
 - Request and dependency types for initialization and verification.
-- `NoVerificationRunError` and `NoQualityGateError`: explicit history-state failures.
+- `NoVerificationRunError`, `NoQualityGateError`, `PolicyApprovalStaleError`, and
+  `PolicyApprovalUnavailableError`: explicit history and approval failures.
 
 ## Allowed dependencies
 
@@ -51,6 +56,12 @@ persistence by the injected run repository.
 - Migration preview does not write; apply requires reviewed source/target digests and does not
   approve or run commands. Legacy configured verification uses named suites from v1 or v2 policy,
   never the new Quick/Full membership or launch-target fields.
+- Approval requires a reviewed current semantic digest and a durable policy reread before local
+  receipt persistence. Outdated or revoked receipts cannot represent current approval; migration
+  acceptance alone creates no receipt.
+- Revocation is keyed to the canonical repository root, so an active receipt can be withdrawn even
+  if the policy is temporarily missing, version 1, or invalid; restoring its old contents does not
+  reactivate a revoked receipt.
 
 ## Security and privacy
 
@@ -73,5 +84,5 @@ Tests use narrow fakes to cover orchestration, event ordering, persistence, hist
 
 ## Example
 
-Composition roots construct `VerifierApplication` with concrete implementations of all four ports;
+Composition roots construct `VerifierApplication` with concrete implementations of its six ports;
 interfaces then call its use-case methods rather than importing adapters directly.

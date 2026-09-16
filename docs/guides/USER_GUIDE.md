@@ -21,6 +21,11 @@ Slice 6B adds an explicit schema-v1 to schema-v2 policy migration. The applicati
 complete proposed YAML and exact diff. It writes only after an explicit Apply action using the
 reviewed revisions; migration remains separate from command approval.
 
+Slice 6C adds a separate local approval step for schema-v2 executable policy. Approval status shows
+the exact reviewed commands and plan membership bound to a semantic digest. You can explicitly
+approve or revoke it; a changed command or other executable setting makes the old approval
+outdated. Formatting and comments do not. Approval still does not run any command or plan.
+
 ## Features
 
 - Opens a local Git repository and summarizes its branch and changed files.
@@ -30,6 +35,8 @@ reviewed revisions; migration remains separate from command approval.
   Node/Vite/Vitest slice, with a reason and source evidence for each included check.
 - Suggests checks from project metadata and stores explicitly configured commands in
   `.verify/project.yml`.
+- Shows whether a schema-v2 executable policy is locally approved, outdated, or revoked; keeps
+  approval receipts in local SQLite rather than the repository.
 - Runs configured test, lint, typecheck, build, and other generic commands with live output.
 - Applies deterministic block-or-warn policy to normalized results.
 - Persists recent run history in a local SQLite database.
@@ -87,13 +94,17 @@ running checks from a repository you do not trust.
    Migration**. Opening a repository or reviewing the preview never rewrites the file. If someone
    edits the source after preview, apply reports a conflict and leaves their edit intact; refresh
    the preview first. Applying migration does not approve or run any command.
-7. Review the Git summary and the configured or suggested checks.
-8. If the repository has no configuration, review every suggested command and choose **Initialize
+7. For a version-2 policy, review the exact executable commands and Quick/Full suite membership in
+   **Execution Approval**. Choose **Approve** only after reviewing the current digest and commands.
+   Choose **Revoke** to withdraw a current or outdated approval. Approval does not run checks; an
+   external executable-policy edit makes the receipt outdated until explicitly approved again.
+8. Review the Git summary and the configured or suggested checks.
+9. If the repository has no configuration, review every suggested command and choose **Initialize
    project**. This creates `.verify/project.yml` without overwriting an existing file.
-9. Edit `.verify/project.yml` in your editor if a command, timeout, or failure policy needs to change,
-   then choose **Inspect again**.
-10. Choose **Run verification**. The dashboard shows live output and each completed check.
-11. Read the final gate and its reasons. Select an item under **Recent runs** to reopen persisted
+10. Edit `.verify/project.yml` in your editor if a command, timeout, or failure policy needs to change,
+    then choose **Inspect again**.
+11. Choose **Run verification**. The dashboard shows live output and each completed check.
+12. Read the final gate and its reasons. Select an item under **Recent runs** to reopen persisted
     evidence, or choose **Return to latest** to leave history view.
 
 Choose **Stop run** to cancel active verification. The application waits for the engine to stop the
@@ -139,6 +150,9 @@ Version 2 keeps those named suites and adds proposed Quick/Full suite membership
 preview shows the exact change before an explicit apply. Migration is a policy-format change, not
 local approval for future smart actions; the existing **Run verification** path still uses the
 named suites rather than automatically executing the proposed plans.
+Approving the current version-2 executable policy creates a local receipt only. It does not edit
+this YAML, authorize a different repository, or launch a smart plan. The existing configured
+**Run verification** path retains its earlier behavior.
 
 ## Use the CLI from a development checkout
 
@@ -149,6 +163,7 @@ pnpm install
 pnpm verify understand "C:\path\to\repository"
 pnpm verify plan "C:\path\to\repository"
 pnpm verify config migrate "C:\path\to\repository"
+pnpm verify config approval status "C:\path\to\repository"
 pnpm verify inspect "C:\path\to\repository"
 pnpm verify run "C:\path\to\repository"
 pnpm verify gate "C:\path\to\repository"
@@ -168,6 +183,15 @@ pnpm verify config migrate "C:\path\to\repository" --apply --expected-digest SOU
 
 A changed source or target revision is rejected rather than overwritten.
 
+For a migrated version-2 policy, review its current executable commands and digest, then approve
+that exact digest explicitly. A stale digest is rejected. Revocation is also explicit:
+
+```powershell
+pnpm verify config approval status "C:\path\to\repository"
+pnpm verify config approval approve "C:\path\to\repository" --expected-digest REVIEWED_SHA256
+pnpm verify config approval revoke "C:\path\to\repository"
+```
+
 ## Local data
 
 Repository policy stays in `.verify/project.yml`. Run history defaults to
@@ -180,6 +204,8 @@ Project profiles and plan previews are not persisted. Running only **Understand 
 `.verify/project.yml`.
 Reviewing a configuration migration also writes nothing. Explicit apply replaces only the YAML
 policy; it does not initialize the history database or approve commands.
+Approval and revocation write only local receipt rows to the SQLite database. Status compares the
+receipt against a freshly validated policy; approval is never stored in `.verify/project.yml`.
 
 ## Troubleshooting
 

@@ -1,12 +1,14 @@
 # @verify/storage
 
-Persists deterministic verification history in a local SQLite database through Drizzle ORM.
+Persists deterministic verification history and local executable-policy approval receipts in a
+SQLite database through Drizzle ORM.
 
 ## Public API
 
 - `RunRepository`: core-facing persistence port for saving and reading run history.
+- `ApprovalReceiptRepository`: local approval-history port for status, approval, and revocation.
 - `ProjectRepository`: optional project metadata port used by composition roots.
-- `SqliteRunRepository`: SQLite/Drizzle implementation of both ports.
+- `SqliteRunRepository`: SQLite/Drizzle implementation of these ports.
 - `createSqliteRunRepository()`: opens the configured database and applies explicit migrations.
 - `SqliteNativeBinding`: optional preloaded addon boundary used by self-contained delivery.
 - `runStorageMigrations()`: idempotent migration bootstrap for tooling and tests.
@@ -26,7 +28,8 @@ The database defaults to `~/.verify/history.sqlite3`. Pass `databasePath`, or se
 ## Data owned
 
 The package stores projects, verification runs, check results, findings, artifacts, timing data,
-and final gate decisions. Repository policy remains exclusively in `.verify/project.yml`.
+final gate decisions, and local executable-policy approval receipts. Repository policy remains
+exclusively in `.verify/project.yml`; approval never edits that file.
 
 ## Invariants
 
@@ -38,6 +41,8 @@ and final gate decisions. Repository policy remains exclusively in `.verify/proj
 - History is returned newest first and is scoped by normalized repository root.
 - No verification or gate policy is evaluated in this package.
 - A supplied native binding changes only addon loading; schema and persistence behavior are identical.
+- At most one active approval receipt exists per normalized repository root. Replacing or revoking
+  approval retains old receipts as local evidence; the core checks current policy digests.
 
 ## Security and privacy
 
@@ -47,7 +52,7 @@ is not encrypted and retained text is not redacted. Callers control retention an
 
 ## Versioned contracts
 
-The schema starts at migration 1. Changes require ordered forward migrations, checksum and
+The schema starts at migration 1; migration 2 adds local approval receipts. Changes require ordered forward migrations, checksum and
 existing-data tests, and must fail closed when an older binary sees an unsupported ledger version.
 Repository policy remains in versioned `.verify/project.yml` rather than being migrated into SQLite.
 

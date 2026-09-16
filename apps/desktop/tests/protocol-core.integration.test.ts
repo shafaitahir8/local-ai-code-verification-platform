@@ -241,4 +241,59 @@ describe('desktop/core equivalence', () => {
     expect(deterministicPlanPreview(guiResult)).toStrictEqual(deterministicPlanPreview(cliPreview));
     await expect(access(database)).rejects.toMatchObject({ code: 'ENOENT' });
   }, 20_000);
+
+  it('projects the same digest-bound approval state through desktop protocol and CLI', async () => {
+    const { repository, database } = await createFixture();
+    const previewResult = await spawnCli(['config', 'migrate', repository, '--json'], database);
+    expect(previewResult).toMatchObject({ code: 0, stderr: '' });
+    const preview = JSON.parse(previewResult.stdout) as ProtocolResultMap['config.migrate.preview'];
+    const migrated = await spawnCli(
+      [
+        'config',
+        'migrate',
+        repository,
+        '--apply',
+        '--expected-digest',
+        preview.sourceDigest,
+        '--expected-target-digest',
+        preview.targetDigest,
+        '--json',
+      ],
+      database,
+    );
+    expect(migrated).toMatchObject({ code: 0, stderr: '' });
+
+    const client = new ProtocolEngineClient(protocolTransport(database));
+    const before = await client.request('config.approval.status', { repository });
+    const cliBefore = await spawnCli(
+      ['config', 'approval', 'status', repository, '--json'],
+      database,
+    );
+    expect(cliBefore).toMatchObject({ code: 0, stderr: '' });
+    expect(before).toStrictEqual(JSON.parse(cliBefore.stdout));
+    expect(before).toMatchObject({ status: 'not-approved', receipt: null });
+    expect(before.review?.suites.some((suite) => suite.command === 'npm test')).toBe(true);
+    if (before.policyDigest === null) throw new Error('Expected a schema-v2 executable digest.');
+
+    const approved = await client.request('config.approval.approve', {
+      repository,
+      expectedPolicyDigest: before.policyDigest,
+    });
+    const cliApproved = await spawnCli(
+      ['config', 'approval', 'status', repository, '--json'],
+      database,
+    );
+    expect(cliApproved).toMatchObject({ code: 0, stderr: '' });
+    expect(approved).toStrictEqual(JSON.parse(cliApproved.stdout));
+    expect(approved.status).toBe('approved');
+
+    const revoked = await client.request('config.approval.revoke', { repository });
+    const cliRevoked = await spawnCli(
+      ['config', 'approval', 'status', repository, '--json'],
+      database,
+    );
+    expect(cliRevoked).toMatchObject({ code: 0, stderr: '' });
+    expect(revoked).toStrictEqual(JSON.parse(cliRevoked.stdout));
+    expect(revoked.status).toBe('revoked');
+  }, 45_000);
 });

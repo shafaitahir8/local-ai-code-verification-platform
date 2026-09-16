@@ -1,4 +1,5 @@
 import { ConfigMigrationStaleError } from '@verify/config';
+import { PolicyApprovalStaleError, PolicyApprovalUnavailableError } from '@verify/core';
 
 import { createApplicationComposition, type ApplicationComposition } from './composition.js';
 import { EXIT_CODES } from './exit-codes.js';
@@ -39,7 +40,14 @@ export async function runCli(options: CliRuntimeOptions = {}): Promise<number> {
       io.writeOut(
         `${JSON.stringify({
           error: {
-            code: error instanceof ConfigMigrationStaleError ? 'MIGRATION_STALE' : 'VERIFY_ERROR',
+            code:
+              error instanceof ConfigMigrationStaleError
+                ? 'MIGRATION_STALE'
+                : error instanceof PolicyApprovalStaleError
+                  ? 'APPROVAL_STALE'
+                  : error instanceof PolicyApprovalUnavailableError
+                    ? 'APPROVAL_UNAVAILABLE'
+                    : 'VERIFY_ERROR',
             message: formatError(error),
           },
         })}\n`,

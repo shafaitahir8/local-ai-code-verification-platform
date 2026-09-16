@@ -1,8 +1,9 @@
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { Project, VerificationRun } from '@verify/domain';
+import type { ApprovalReceipt, Project, VerificationRun } from '@verify/domain';
 import BetterSqlite3 from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -13,6 +14,7 @@ import {
   SqliteRunRepository,
   StorageMigrationError,
 } from '../src/index.js';
+import { initialMigration } from '../src/migrations/0001-initial.js';
 
 const createdDirectories: string[] = [];
 const openRepositories: SqliteRunRepository[] = [];
@@ -92,6 +94,22 @@ function sampleRun(
         skipped: 0,
       },
     },
+    ...overrides,
+  };
+}
+
+function sampleReceipt(
+  repositoryRoot: string,
+  overrides: Partial<ApprovalReceipt> = {},
+): ApprovalReceipt {
+  return {
+    id: 'receipt-1',
+    repositoryRoot: normalizeRepositoryRoot(repositoryRoot),
+    policySchemaVersion: 2,
+    digestVersion: 1,
+    policyDigest: 'a'.repeat(64),
+    approvedAt: '2026-09-16T00:00:00.000Z',
+    revokedAt: null,
     ...overrides,
   };
 }
@@ -204,11 +222,98 @@ describe('SqliteRunRepository', () => {
   });
 });
 
+describe('local approval receipts', () => {
+  it('persists current approval across reopen and scopes it to one repository', async () => {
+    const directory = temporaryDirectory();
+    const databasePath = join(directory, 'history.sqlite3');
+    const root = join(directory, 'repository');
+    const otherRoot = join(directory, 'other');
+    const receipt = sampleReceipt(root);
+    const first = openRepository(databasePath);
+
+    await expect(first.getLatestApprovalReceipt(root)).resolves.toBeNull();
+    await expect(first.approvePolicyReceipt(receipt)).resolves.toEqual(receipt);
+    await expect(first.getLatestApprovalReceipt(otherRoot)).resolves.toBeNull();
+    first.close();
+
+    const reopened = openRepository(databasePath);
+    await expect(reopened.getLatestApprovalReceipt(root)).resolves.toEqual(receipt);
+    await expect(reopened.getLatestApprovalReceipt(otherRoot)).resolves.toBeNull();
+  });
+
+  it('replaces active approval atomically while retaining historical evidence', async () => {
+    const directory = temporaryDirectory();
+    const databasePath = join(directory, 'history.sqlite3');
+    const root = join(directory, 'repository');
+    const first = sampleReceipt(root);
+    const second = sampleReceipt(root, {
+      id: 'receipt-2',
+      policyDigest: 'b'.repeat(64),
+      approvedAt: '2026-09-16T01:00:00.000Z',
+    });
+    const repository = openRepository(databasePath);
+
+    await repository.approvePolicyReceipt(first);
+    await repository.approvePolicyReceipt(second);
+    await expect(repository.getLatestApprovalReceipt(root)).resolves.toEqual(second);
+
+    const database = new BetterSqlite3(databasePath);
+    const history = database
+      .prepare('SELECT id, revoked_at FROM approval_receipts ORDER BY row_id')
+      .all() as { id: string; revoked_at: string | null }[];
+    expect(history).toEqual([
+      { id: first.id, revoked_at: second.approvedAt },
+      { id: second.id, revoked_at: null },
+    ]);
+    database.close();
+
+    await expect(
+      repository.approvePolicyReceipt(
+        sampleReceipt(root, { id: first.id, policyDigest: 'c'.repeat(64) }),
+      ),
+    ).rejects.toThrow();
+    await expect(repository.getLatestApprovalReceipt(root)).resolves.toEqual(second);
+  });
+
+  it('revokes without erasing history and returns the latest revoked receipt on repeat', async () => {
+    const repository = openRepository(':memory:');
+    const root = join(temporaryDirectory(), 'repository');
+    const receipt = sampleReceipt(root);
+    const revokedAt = '2026-09-16T02:00:00.000Z';
+
+    await expect(repository.revokeActiveApprovalReceipt(root, revokedAt)).resolves.toBeNull();
+    await repository.approvePolicyReceipt(receipt);
+    const revoked = { ...receipt, revokedAt };
+    await expect(repository.revokeActiveApprovalReceipt(root, revokedAt)).resolves.toEqual(revoked);
+    await expect(repository.revokeActiveApprovalReceipt(root, revokedAt)).resolves.toEqual(revoked);
+    await expect(repository.getLatestApprovalReceipt(root)).resolves.toEqual(revoked);
+  });
+
+  it('rejects malformed receipt inputs and corrupted persisted receipts', async () => {
+    const directory = temporaryDirectory();
+    const databasePath = join(directory, 'history.sqlite3');
+    const root = join(directory, 'repository');
+    const repository = openRepository(databasePath);
+    await expect(
+      repository.approvePolicyReceipt(sampleReceipt(root, { policyDigest: 'bad' })),
+    ).rejects.toThrow(TypeError);
+    await expect(repository.getLatestApprovalReceipt(root)).resolves.toBeNull();
+    const receipt = sampleReceipt(root);
+    await repository.approvePolicyReceipt(receipt);
+    const database = new BetterSqlite3(databasePath);
+    database
+      .prepare('UPDATE approval_receipts SET policy_digest = ? WHERE id = ?')
+      .run('bad', receipt.id);
+    database.close();
+    await expect(repository.getLatestApprovalReceipt(root)).rejects.toThrow('invalid shape');
+  });
+});
+
 describe('storage migrations and paths', () => {
-  it('applies the forward migration once and preserves existing data on bootstrap', () => {
+  it('applies both forward migrations once and preserves existing data on bootstrap', () => {
     const database = new BetterSqlite3(':memory:');
     const first = runStorageMigrations(database);
-    expect(first.applied.map((migration) => migration.version)).toEqual([1]);
+    expect(first.applied.map((migration) => migration.version)).toEqual([1, 2]);
 
     database
       .prepare(
@@ -218,10 +323,49 @@ describe('storage migrations and paths', () => {
       .run('existing', 'Existing', '/existing', '2026-01-01', '2026-01-01');
 
     const second = runStorageMigrations(database);
-    expect(second).toMatchObject({ applied: [], currentVersion: 1 });
+    expect(second).toMatchObject({ applied: [], currentVersion: 2 });
     expect(database.prepare('SELECT name FROM projects WHERE id = ?').pluck().get('existing')).toBe(
       'Existing',
     );
+    database.close();
+  });
+
+  it('upgrades a populated version-1 database without changing run history', () => {
+    const database = new BetterSqlite3(':memory:');
+    database.exec(initialMigration.sql);
+    database.exec(`CREATE TABLE __verify_migrations (
+      version INTEGER PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL,
+      checksum TEXT NOT NULL,
+      applied_at TEXT NOT NULL
+    )`);
+    database
+      .prepare(`INSERT INTO __verify_migrations VALUES (?, ?, ?, ?)`)
+      .run(
+        1,
+        initialMigration.name,
+        createHash('sha256').update(initialMigration.sql).digest('hex'),
+        '2026-09-07T00:00:00.000Z',
+      );
+    database
+      .prepare(
+        `INSERT INTO projects (id, name, repository_root, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run('existing', 'Existing', '/existing', '2026-01-01', '2026-01-01');
+    database
+      .prepare(
+        `INSERT INTO verification_runs
+       (id, project_id, repository_root, status, started_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run('old-run', 'existing', '/existing', 'running', '2026-01-01', '2026-01-01', '2026-01-01');
+
+    const result = runStorageMigrations(database);
+    expect(result).toMatchObject({ currentVersion: 2 });
+    expect(result.applied.map((migration) => migration.version)).toEqual([2]);
+    expect(database.prepare('SELECT id FROM verification_runs').pluck().all()).toEqual(['old-run']);
+    expect(database.prepare('SELECT COUNT(*) FROM approval_receipts').pluck().get()).toBe(0);
     database.close();
   });
 
@@ -229,6 +373,14 @@ describe('storage migrations and paths', () => {
     const database = new BetterSqlite3(':memory:');
     runStorageMigrations(database);
     database.prepare('UPDATE __verify_migrations SET checksum = ? WHERE version = 1').run('wrong');
+    expect(() => runStorageMigrations(database)).toThrow(StorageMigrationError);
+    database.close();
+  });
+
+  it('detects checksum drift for the new approval migration', () => {
+    const database = new BetterSqlite3(':memory:');
+    runStorageMigrations(database);
+    database.prepare('UPDATE __verify_migrations SET checksum = ? WHERE version = 2').run('wrong');
     expect(() => runStorageMigrations(database)).toThrow(StorageMigrationError);
     database.close();
   });
@@ -241,9 +393,9 @@ describe('storage migrations and paths', () => {
         `INSERT INTO __verify_migrations (version, name, checksum, applied_at)
          VALUES (?, ?, ?, ?)`,
       )
-      .run(2, 'future', 'future-checksum', '2026-09-07T00:00:00.000Z');
+      .run(3, 'future', 'future-checksum', '2026-09-07T00:00:00.000Z');
 
-    expect(() => runStorageMigrations(database)).toThrow(/version 2 is not supported/u);
+    expect(() => runStorageMigrations(database)).toThrow(/version 3 is not supported/u);
     database.close();
   });
 

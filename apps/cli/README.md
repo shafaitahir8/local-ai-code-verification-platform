@@ -14,6 +14,9 @@ pnpm verify understand [repository] [--json]
 pnpm verify plan [repository] [--json]
 pnpm verify config migrate [repository] [--json]
 pnpm verify config migrate [repository] --apply --expected-digest <source-digest> --expected-target-digest <target-digest> [--json]
+pnpm verify config approval status [repository] [--json]
+pnpm verify config approval approve [repository] --expected-digest <policy-digest> [--json]
+pnpm verify config approval revoke [repository] [--json]
 pnpm verify inspect [repository] [--json]
 pnpm verify run [repository] [--json]
 pnpm verify gate [repository] [--json]
@@ -45,6 +48,14 @@ and rejects changed source or target policy instead of silently accepting a fres
 Migration preserves named suites but does not approve commands or execute them; `verify run`
 continues using the named suites after migration. JSON apply reports a stale reviewed source or
 target with the structured `MIGRATION_STALE` error code.
+
+`config approval status` reads the current semantic executable-policy digest and local receipt
+state. `approve` requires that reviewed digest, fails with `APPROVAL_STALE` if policy changed, and
+stores a local receipt only after explicit invocation. `revoke` explicitly marks the current local
+approval revoked. YAML formatting and comments do not change the semantic digest, but executable
+policy edits make an old approval outdated. These commands do not execute a plan or check.
+Missing, invalid, or version-1 policies reject approval with `APPROVAL_UNAVAILABLE`; a local
+receipt can still be revoked while the policy is unavailable.
 
 ## Allowed dependencies
 
@@ -88,7 +99,7 @@ that addon to a content-addressed per-user cache; it does not resolve packages f
 ## Versioned contracts
 
 The CLI keeps schema-v1 read/run behavior and adds explicit schema-v2 policy inspection/migration
-through additive methods. Protocol version 1, storage migration 1, and application version 0.1.0
+and local approval through additive methods. Protocol version 1 and application version 0.1.0
 remain unchanged. Exit meanings and existing JSON fields must not change silently.
 
 ## Testing

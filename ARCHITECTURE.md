@@ -50,8 +50,8 @@ The canonical product reset and delivery sequence are documented in
 **docs/tasks/IMPLEMENTATION-PLAN-POST-V0.1.0.md**. ADR-009 through ADR-014 govern the new authority,
 sensor, configuration, cancellation, provider, and launch boundaries. These are roadmap decisions.
 The package table and primary flows below describe the v0.1.0 system, the implemented Iteration 5
-project-intelligence foundation, and Iteration 6's preview-only planning plus explicit policy
-migration slices; approval and smart execution remain prospective.
+project-intelligence foundation, and Iteration 6's preview-only planning, explicit policy
+migration, and local approval-state slices; smart execution remains prospective.
 
 Iteration 5 adds portable profile types to **@verify/domain**, a `ProjectProfilerPort` to
 **@verify/core**, and one documented project-intelligence implementation containing the bounded
@@ -80,21 +80,21 @@ There is one implementation of repository inspection, configuration, verificatio
 
 ## Package ownership
 
-| Package                             | Owns                                                                                                                         | Must not own                                                   |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| **@verify/domain**                  | Infrastructure-independent entities, result types, findings, artifacts, gates, and plan records                              | Git commands, YAML, SQLite, subprocesses, React, Tauri         |
-| **@verify/core**                    | Initialize, discover, profile, preview-plan, inspect, run, gate, and history use cases; application ports                    | Concrete drivers or interface rendering                        |
-| **@verify/config**                  | **.verify/project.yml**, strict schema v1, additive v2 policy/migration validation, safe writes, and compatibility discovery | Command execution, approvals, or gate decisions                |
-| **@verify/project-intelligence**    | Bounded read-only inventory, sensor coordination, Node/static/Python detection, and declared workspace mapping               | Project command execution, policy mutation, persistence, or AI |
-| **@verify/repository**              | Git root discovery, branch/status/diff parsing, and changed-file normalization                                               | Project-marker discovery, verification scheduling, or UI state |
-| **@verify/verification**            | Run lifecycle, check scheduling, timeout/cancellation contracts, normalized events                                           | Shell-specific execution details or policy                     |
-| **@verify/adapter-generic-command** | Local execution of explicitly configured commands                                                                            | Config invention, gate decisions, remote shells                |
-| **@verify/policy**                  | Deterministic PASS/WARN/BLOCK evaluation from normalized results                                                             | Process or tool implementation details                         |
-| **@verify/storage**                 | RunRepository implementation, SQLite/Drizzle schema and ordered migrations                                                   | Source-controlled project policy                               |
-| **@verify/protocol**                | Version 1 request, event, result, and error envelopes                                                                        | Business logic or arbitrary console parsing                    |
-| **@verify/ui**                      | Reusable accessible presentation primitives                                                                                  | Repository or verification behavior                            |
-| **apps/cli**                        | CLI parsing, composition, human and stable JSON output, protocol server                                                      | Duplicate use cases                                            |
-| **apps/desktop**                    | Tauri process bridge and React dashboard                                                                                     | Gate calculation, Git parsing, command execution, persistence  |
+| Package                             | Owns                                                                                                                       | Must not own                                                   |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| **@verify/domain**                  | Infrastructure-independent entities, results, findings, artifacts, gates, plans, and approval records                      | Git commands, YAML, SQLite, subprocesses, React, Tauri         |
+| **@verify/core**                    | Initialize, discover, profile, preview-plan, policy approval, inspect, run, gate, and history use cases; application ports | Concrete drivers or interface rendering                        |
+| **@verify/config**                  | **.verify/project.yml**, strict schema v1, v2 policy/migration validation, canonical executable digest, safe writes        | Command execution, approval storage, or gate decisions         |
+| **@verify/project-intelligence**    | Bounded read-only inventory, sensor coordination, Node/static/Python detection, and declared workspace mapping             | Project command execution, policy mutation, persistence, or AI |
+| **@verify/repository**              | Git root discovery, branch/status/diff parsing, and changed-file normalization                                             | Project-marker discovery, verification scheduling, or UI state |
+| **@verify/verification**            | Run lifecycle, check scheduling, timeout/cancellation contracts, normalized events                                         | Shell-specific execution details or policy                     |
+| **@verify/adapter-generic-command** | Local execution of explicitly configured commands                                                                          | Config invention, gate decisions, remote shells                |
+| **@verify/policy**                  | Deterministic PASS/WARN/BLOCK evaluation from normalized results                                                           | Process or tool implementation details                         |
+| **@verify/storage**                 | RunRepository and local approval receipts, SQLite/Drizzle schema and ordered migrations                                    | Source-controlled project policy                               |
+| **@verify/protocol**                | Version 1 request, event, result, and error envelopes                                                                      | Business logic or arbitrary console parsing                    |
+| **@verify/ui**                      | Reusable accessible presentation primitives                                                                                | Repository or verification behavior                            |
+| **apps/cli**                        | CLI parsing, composition, human and stable JSON output, protocol server                                                    | Duplicate use cases                                            |
+| **apps/desktop**                    | Tauri process bridge and React dashboard                                                                                   | Gate calculation, Git parsing, command execution, persistence  |
 
 Package names may be split further only when a concrete implementation needs a separately testable adapter. Empty roadmap packages are not created.
 
@@ -187,6 +187,23 @@ execute a Quick/Full plan, or initialize history storage. Legacy configured veri
 same named suites from version 1 or 2 without consulting proposed plan membership. Launch targets,
 discovery exclusions, and overrides remain empty and non-operational in this slice.
 
+### Review executable-policy approval (Iteration 6 slice 6C)
+
+1. Core resolves the canonical Git root and loads the durable, validated version-2 policy.
+2. Configuration projects only execution-relevant semantics into a versioned canonical SHA-256
+   digest. Formatting, comments, and project display name do not change that digest; commands,
+   suite settings, and ordered Quick/Full membership do.
+3. Local SQLite stores a receipt for the root and digest. Core compares that receipt against the
+   freshly loaded policy to report missing, invalid, migration-required, unapproved, approved,
+   outdated, or revoked state. A changed executable policy cannot retain current approval.
+4. Approve requires the reviewed digest, rereads durable policy before recording the receipt, and
+   keeps older receipts as history. Revoke marks the active receipt revoked even if YAML is
+   temporarily missing or invalid. Neither operation changes YAML or executes a command.
+
+Migration acceptance is distinct from approval. Legacy configured `verify run` remains unchanged;
+future smart actions must check a current receipt before execution. Slice 6C adds authorization
+state only, not those actions or an execution path.
+
 ### Run verification
 
 1. Core loads and validates project configuration.
@@ -227,7 +244,10 @@ WARN has shell exit code 0 for v0.1.0. BLOCK has exit code 1; operational errors
 
 ## Storage
 
-Run history is local SQLite managed by **@verify/storage**, using Drizzle metadata and explicit ordered SQL migrations. The implementation enables foreign-key enforcement and uses WAL where supported. A RunRepository port shields core use cases from the synchronous driver and physical schema.
+Run history and approval receipts are local SQLite managed by **@verify/storage**, using Drizzle
+metadata and explicit ordered SQL migrations. The implementation enables foreign-key enforcement
+and uses WAL where supported. Narrow run and approval ports shield core use cases from the
+synchronous driver and physical schema. Receipts do not replace portable repository YAML policy.
 
 Stored command output may contain proprietary data or secrets and must be treated as sensitive. Retention controls and encryption at rest are future considerations, not implied MVP protections.
 
@@ -251,8 +271,9 @@ Initial methods cover project discovery, config read/init, repository inspection
 graceful verification cancellation, latest gate, and run history. Iteration 5 additively introduces
 `project.profile`, typed `profile.progress` events, and `operation.cancel`; Iteration 6 slice 6A adds
 the read-only `verification.plan` method; slice 6B adds version-aware `config.policy.get` and
-explicit migration preview/apply methods. Existing protocol-v1 methods and `verification.cancel`
-retain their meaning. A cancellation control frame has its own request ID and targets the correlated
+explicit migration preview/apply methods. Slice 6C additively exposes approval status, approve,
+and revoke methods; none is an execution request. Existing protocol-v1 methods and
+`verification.cancel` retain their meaning. A cancellation control frame has its own request ID and targets the correlated
 active request. Accepted profile or plan-preview cancellation terminates with that operation's
 non-persisted cancelled result and creates no verification run. Accepted verification cancellation
 must still end in the original run's persisted `cancelled` terminal result. The native bridge

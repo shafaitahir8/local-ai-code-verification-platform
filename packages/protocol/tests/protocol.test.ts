@@ -896,6 +896,165 @@ describe('additive configuration migration protocol', () => {
   });
 });
 
+describe('additive executable-policy approval protocol', () => {
+  const digest = 'c'.repeat(64);
+  const current = {
+    repositoryRoot: '/repo',
+    policyPath: '/repo/.verify/project.yml',
+    policyExists: true,
+    policyVersion: 2,
+    policyDigest: digest,
+    review: {
+      digestVersion: 1,
+      policySchemaVersion: 2,
+      suites: [
+        {
+          id: 'test',
+          type: 'test',
+          command: 'npm test',
+          failurePolicy: 'block',
+          timeoutMs: null,
+        },
+      ],
+      plans: { quick: ['test'], full: ['test'] },
+      launchTargets: {},
+      overrides: {},
+    },
+    status: 'approved',
+    receipt: {
+      id: 'approval-1',
+      repositoryRoot: '/repo',
+      policySchemaVersion: 2,
+      digestVersion: 1,
+      policyDigest: digest,
+      approvedAt: '2026-09-16T08:00:00.000Z',
+      revokedAt: null,
+    },
+  } as const;
+
+  it('round-trips status, explicit guarded approval, and revocation without changing protocol v1', () => {
+    for (const method of ['config.approval.status', 'config.approval.revoke'] as const) {
+      const request = {
+        protocolVersion: 1,
+        id: method,
+        method,
+        params: { repository: '/repo' },
+      } satisfies ProtocolRequest<typeof method>;
+      expect(decodeRequestLine(encodeRequest(request))).toEqual(request);
+      expect(
+        decodeResultLine(
+          method,
+          encodeResult(method, { protocolVersion: 1, id: method, result: current }),
+        ),
+      ).toEqual({ protocolVersion: 1, id: method, result: current });
+    }
+
+    const approve = {
+      protocolVersion: 1,
+      id: 'approve',
+      method: 'config.approval.approve',
+      params: { repository: '/repo', expectedPolicyDigest: digest },
+    } satisfies ProtocolRequest<'config.approval.approve'>;
+    expect(decodeRequestLine(encodeRequest(approve))).toEqual(approve);
+    expect(
+      decodeResultLine(
+        'config.approval.approve',
+        encodeResult('config.approval.approve', {
+          protocolVersion: 1,
+          id: 'approve',
+          result: current,
+        }),
+      ),
+    ).toEqual({ protocolVersion: 1, id: 'approve', result: current });
+  });
+
+  it('keeps receipts visible and revocable when the repository policy is unavailable', () => {
+    for (const unavailable of [
+      { status: 'policy-missing', policyExists: false },
+      { status: 'policy-invalid', policyExists: true },
+      { status: 'migration-required', policyExists: true, policyVersion: 1 },
+    ] as const) {
+      const result = {
+        ...current,
+        ...unavailable,
+        policyVersion: unavailable.status === 'migration-required' ? 1 : null,
+        policyDigest: null,
+        review: null,
+      } as ProtocolResultMap['config.approval.status'];
+      expect(
+        decodeResultLine(
+          'config.approval.status',
+          encodeResult('config.approval.status', {
+            protocolVersion: 1,
+            id: unavailable.status,
+            result,
+          }),
+        ),
+      ).toMatchObject({ result });
+    }
+  });
+
+  it('rejects unguarded approval, malformed digest, and malformed receipt metadata', () => {
+    for (const params of [
+      { repository: '/repo' },
+      { repository: '/repo', expectedPolicyDigest: 'x' },
+    ]) {
+      expect(() =>
+        decodeRequestLine(
+          JSON.stringify({
+            protocolVersion: 1,
+            id: 'approve',
+            method: 'config.approval.approve',
+            params,
+          }),
+        ),
+      ).toThrow(ProtocolDecodeError);
+    }
+    expect(() =>
+      encodeResult('config.approval.status', {
+        protocolVersion: 1,
+        id: 'invalid',
+        result: {
+          ...current,
+          receipt: { ...current.receipt, digestVersion: 99 },
+        } as unknown as ProtocolResultMap['config.approval.status'],
+      }),
+    ).toThrow(ProtocolDecodeError);
+    for (const invalid of [
+      { ...current, receipt: null },
+      { ...current, review: null },
+      { ...current, receipt: { ...current.receipt, repositoryRoot: '/other' } },
+      { ...current, status: 'outdated' },
+      { ...current, status: 'revoked' },
+    ]) {
+      expect(() =>
+        encodeResult('config.approval.status', {
+          protocolVersion: 1,
+          id: 'invalid-state',
+          result: invalid as unknown as ProtocolResultMap['config.approval.status'],
+        }),
+      ).toThrow(ProtocolDecodeError);
+    }
+  });
+
+  it('preserves a structured stale approval conflict', () => {
+    const error = {
+      protocolVersion: 1,
+      id: 'approve',
+      error: { code: 'APPROVAL_STALE', message: 'Executable policy changed.' },
+    } as const;
+    expect(decodeResultLine('config.approval.approve', encodeError(error))).toEqual(error);
+    const unavailable = {
+      protocolVersion: 1,
+      id: 'legacy-approve',
+      error: { code: 'APPROVAL_UNAVAILABLE', message: 'Schema-v2 policy is required.' },
+    } as const;
+    expect(decodeResultLine('config.approval.approve', encodeError(unavailable))).toEqual(
+      unavailable,
+    );
+  });
+});
+
 describe('streaming NDJSON decoder', () => {
   it('decodes split chunks, multiple records, CRLF, and a final unterminated record', () => {
     const first = encodeRequest({

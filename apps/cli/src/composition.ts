@@ -11,6 +11,7 @@ import {
 } from '@verify/config';
 import {
   VerifierApplication,
+  type ApprovalReceiptPort,
   type ProjectProfilerPort,
   type RunRepositoryPort,
 } from '@verify/core';
@@ -33,7 +34,7 @@ export interface ApplicationCompositionOptions {
   readonly profiler?: ProjectProfilerPort;
 }
 
-class LazyRunRepository implements RunRepositoryPort {
+class LazyRunRepository implements RunRepositoryPort, ApprovalReceiptPort {
   #repository: SqliteRunRepository | undefined;
 
   public constructor(private readonly createRepository: () => SqliteRunRepository) {}
@@ -48,6 +49,22 @@ class LazyRunRepository implements RunRepositoryPort {
 
   public listRuns(...args: Parameters<RunRepositoryPort['listRuns']>) {
     return this.#get().listRuns(...args);
+  }
+
+  public getLatestApprovalReceipt(
+    ...args: Parameters<ApprovalReceiptPort['getLatestApprovalReceipt']>
+  ) {
+    return this.#get().getLatestApprovalReceipt(...args);
+  }
+
+  public approvePolicyReceipt(...args: Parameters<ApprovalReceiptPort['approvePolicyReceipt']>) {
+    return this.#get().approvePolicyReceipt(...args);
+  }
+
+  public revokeActiveApprovalReceipt(
+    ...args: Parameters<ApprovalReceiptPort['revokeActiveApprovalReceipt']>
+  ) {
+    return this.#get().revokeActiveApprovalReceipt(...args);
   }
 
   public close(): void {
@@ -88,6 +105,7 @@ export function createApplicationComposition(
     profiler: options.profiler ?? createProjectProfiler(),
     verification,
     runs: runRepository,
+    approvals: runRepository,
   });
 
   return {

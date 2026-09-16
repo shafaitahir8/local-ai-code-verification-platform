@@ -229,6 +229,190 @@ describe('desktop dashboard', () => {
     expect(request.mock.calls.some(([method]) => method === 'config.get')).toBe(false);
   });
 
+  it('does not approve a version-1 policy or a migration automatically', async () => {
+    const user = userEvent.setup();
+    const client = createMockEngineClient({ latencyMs: 0 });
+    const request = vi.spyOn(client, 'request');
+    render(
+      <App
+        client={client}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\approval-after-migration"
+      />,
+    );
+
+    const approval = await screen.findByRole('region', { name: 'Executable Policy Approval' });
+    expect(
+      await within(approval).findByText('Migration required before approval'),
+    ).toBeInTheDocument();
+    expect(within(approval).queryByRole('button', { name: 'Approve Current Policy' })).toBeNull();
+
+    const migration = screen.getByRole('region', { name: 'Configuration Migration' });
+    await user.click(within(migration).getByRole('button', { name: 'Review Migration' }));
+    await user.click(await within(migration).findByRole('button', { name: 'Apply Migration' }));
+
+    expect(await within(approval).findByText('Not approved')).toBeInTheDocument();
+    expect(within(approval).getByRole('button', { name: 'Approve Current Policy' })).toBeEnabled();
+    expect(request.mock.calls.some(([method]) => method === 'config.approval.approve')).toBe(false);
+    expect(request.mock.calls.some(([method]) => method === 'verification.run')).toBe(false);
+  });
+
+  it('explicitly approves the reviewed digest and revokes without running a command', async () => {
+    const user = userEvent.setup();
+    const repository = 'C:\\work\\approval-actions';
+    const client = createMockEngineClient({ latencyMs: 0, initialPolicyVersion: 2 });
+    const request = vi.spyOn(client, 'request');
+    render(
+      <App client={client} pickRepository={async () => null} initialRepository={repository} />,
+    );
+
+    const approval = await screen.findByRole('region', { name: 'Executable Policy Approval' });
+    expect(await within(approval).findByText('Not approved')).toBeInTheDocument();
+    expect(approval).toHaveTextContent('pnpm test');
+    expect(approval).toHaveTextContent('Quick: test, lint');
+    expect(approval).toHaveTextContent('Full: test, typecheck, lint');
+    expect(request.mock.calls.some(([method]) => method === 'config.approval.approve')).toBe(false);
+
+    const digest = (await client.request('config.approval.status', { repository })).policyDigest;
+    await user.click(within(approval).getByRole('button', { name: 'Approve Current Policy' }));
+    expect(await within(approval).findByText('Approved')).toBeInTheDocument();
+    const approveCall = request.mock.calls.find(([method]) => method === 'config.approval.approve');
+    expect(approveCall?.[1]).toEqual({ repository, expectedPolicyDigest: digest });
+
+    await user.click(within(approval).getByRole('button', { name: 'Revoke Approval' }));
+    expect(await within(approval).findByText('Approval revoked')).toBeInTheDocument();
+    expect(request.mock.calls.some(([method]) => method === 'verification.run')).toBe(false);
+    expect(request.mock.calls.some(([method]) => method === 'config.migrate.apply')).toBe(false);
+  });
+
+  it('renders the command snapshot bound to approval status rather than a separate policy fetch', async () => {
+    const client = createMockEngineClient({
+      latencyMs: 0,
+      initialPolicyVersion: 2,
+      approvalReviewTestCommand: 'pnpm run reviewed-tests',
+    });
+    render(
+      <App
+        client={client}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\review-snapshot"
+      />,
+    );
+
+    const approval = await screen.findByRole('region', { name: 'Executable Policy Approval' });
+    await within(approval).findByText('Not approved');
+    expect(approval).toHaveTextContent('pnpm run reviewed-tests');
+    expect(approval).not.toHaveTextContent('pnpm test');
+  });
+
+  it('shows outdated approval and requires explicit reapproval', async () => {
+    const user = userEvent.setup();
+    const client = createMockEngineClient({
+      latencyMs: 0,
+      initialPolicyVersion: 2,
+      initialApprovalStatus: 'outdated',
+    });
+    const request = vi.spyOn(client, 'request');
+    render(
+      <App
+        client={client}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\outdated-approval"
+      />,
+    );
+
+    const approval = await screen.findByRole('region', { name: 'Executable Policy Approval' });
+    expect(
+      await within(approval).findByText('Approval outdated because policy changed'),
+    ).toBeInTheDocument();
+    expect(approval).toHaveTextContent('Review and approve again.');
+    expect(request.mock.calls.some(([method]) => method === 'config.approval.approve')).toBe(false);
+    await user.click(within(approval).getByRole('button', { name: 'Approve Current Policy' }));
+    expect(await within(approval).findByText('Approved')).toBeInTheDocument();
+  });
+
+  it('allows a stale approval receipt to be explicitly revoked', async () => {
+    const user = userEvent.setup();
+    const client = createMockEngineClient({
+      latencyMs: 0,
+      initialPolicyVersion: 2,
+      initialApprovalStatus: 'outdated',
+    });
+    render(
+      <App
+        client={client}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\revoke-outdated"
+      />,
+    );
+
+    const approval = await screen.findByRole('region', { name: 'Executable Policy Approval' });
+    await within(approval).findByText('Approval outdated because policy changed');
+    await user.click(within(approval).getByRole('button', { name: 'Revoke Approval' }));
+    expect(await within(approval).findByText('Approval revoked')).toBeInTheDocument();
+  });
+
+  it('does not claim approval when the reviewed digest becomes stale', async () => {
+    const user = userEvent.setup();
+    const client = createMockEngineClient({
+      latencyMs: 0,
+      initialPolicyVersion: 2,
+      approvalStale: true,
+    });
+    render(
+      <App
+        client={client}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\stale-approval"
+      />,
+    );
+
+    const approval = await screen.findByRole('region', { name: 'Executable Policy Approval' });
+    await within(approval).findByText('Not approved');
+    await user.click(within(approval).getByRole('button', { name: 'Approve Current Policy' }));
+    expect(await within(approval).findByRole('alert')).toHaveTextContent('APPROVAL_STALE');
+    expect(within(approval).queryByText('Approved')).not.toBeInTheDocument();
+    expect(within(approval).queryByRole('button', { name: 'Approve Current Policy' })).toBeNull();
+    await user.click(within(approval).getByRole('button', { name: 'Refresh Approval Status' }));
+    expect(await within(approval).findByText('Not approved')).toBeInTheDocument();
+  });
+
+  it('ignores an old repository approval status after another repository is selected', async () => {
+    let releaseOldStatus: () => void = () => undefined;
+    const barrier = new Promise<void>((resolve) => {
+      releaseOldStatus = resolve;
+    });
+    const user = userEvent.setup();
+    const client = createMockEngineClient({
+      latencyMs: 0,
+      initialPolicyVersion: 2,
+      approvalStatusBarrier: barrier,
+    });
+    render(
+      <App
+        client={client}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\old-approval"
+      />,
+    );
+
+    const approval = await screen.findByRole('region', { name: 'Executable Policy Approval' });
+    expect(approval).toHaveTextContent('Checking approval status');
+    const path = screen.getByRole('textbox', { name: 'Repository path' });
+    await user.clear(path);
+    await user.type(path, 'C:\\work\\new-approval');
+    await user.click(screen.getByRole('button', { name: 'Inspect again' }));
+    expect(await screen.findByRole('heading', { name: 'new-approval' })).toBeInTheDocument();
+    const newApproval = screen.getByRole('region', { name: 'Executable Policy Approval' });
+    expect(await within(newApproval).findByText('Not approved')).toBeInTheDocument();
+    await user.click(within(newApproval).getByRole('button', { name: 'Approve Current Policy' }));
+    expect(await within(newApproval).findByText('Approved')).toBeInTheDocument();
+
+    releaseOldStatus();
+    await waitFor(() => expect(within(newApproval).getByText('Approved')).toBeInTheDocument());
+    expect(newApproval).toHaveTextContent('new-approval');
+  });
+
   it('does not let a delayed migration preview replace another selected repository', async () => {
     let releasePreview: () => void = () => undefined;
     const barrier = new Promise<void>((resolve) => {

@@ -49,6 +49,9 @@ owned by its source package.
 - `config.policy.get`
 - `config.migrate.preview`
 - `config.migrate.apply`
+- `config.approval.status`
+- `config.approval.approve`
+- `config.approval.revoke`
 - `repository.inspect`
 - `verification.run`
 - `verification.cancel`
@@ -76,6 +79,13 @@ the method executes no command and persists no profile, plan, configuration, or 
 read-only v1-to-v2 proposal with complete target YAML, exact diff, explanation, and source/target
 SHA-256 digests. `config.migrate.apply` requires both reviewed digests; a stale source or target
 proposal fails with `MIGRATION_STALE`. Migration does not approve or execute commands.
+
+`config.approval.status` returns the current semantic executable-policy digest and local approval
+state. `config.approval.approve` requires a reviewed `expectedPolicyDigest` and rejects a changed
+policy with `APPROVAL_STALE`. `config.approval.revoke` explicitly revokes local approval. All three
+return the same normalized status model; none executes a check or changes a quality gate.
+Missing, invalid, or version-1 policies reject approval with `APPROVAL_UNAVAILABLE`; an active
+receipt can still be revoked when the policy is unavailable.
 
 `verification.cancel` is an additive version 1 control request. It has its own request ID and names
 the active `verification.run` request in `params.targetRequestId`. Its terminal result is

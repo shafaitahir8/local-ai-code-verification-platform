@@ -1,4 +1,4 @@
-import type { Project, VerificationRun } from '@verify/domain';
+import type { ApprovalReceipt, Project, VerificationRun } from '@verify/domain';
 
 /** Persistence boundary consumed by core verification and history use cases. */
 export interface RunRepository {
@@ -12,4 +12,14 @@ export interface RunRepository {
 export interface ProjectRepository {
   saveProject(project: Project): Promise<Project>;
   getProject(repositoryRoot: string): Promise<Project | null>;
+}
+
+/** Local, historical approval evidence. The current policy digest is evaluated by core. */
+export interface ApprovalReceiptRepository {
+  getLatestApprovalReceipt(repositoryRoot: string): Promise<ApprovalReceipt | null>;
+  approvePolicyReceipt(receipt: ApprovalReceipt): Promise<ApprovalReceipt>;
+  revokeActiveApprovalReceipt(
+    repositoryRoot: string,
+    revokedAt: string,
+  ): Promise<ApprovalReceipt | null>;
 }

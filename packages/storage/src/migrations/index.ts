@@ -3,8 +3,9 @@ import { createHash } from 'node:crypto';
 import type Database from 'better-sqlite3';
 
 import { initialMigration } from './0001-initial.js';
+import { approvalReceiptsMigration } from './0002-approval-receipts.js';
 
-const migrations = [initialMigration] as const;
+const migrations = [initialMigration, approvalReceiptsMigration] as const;
 
 interface AppliedMigrationRow {
   readonly version: number;

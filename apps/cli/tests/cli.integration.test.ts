@@ -275,6 +275,17 @@ async function fixture(name: string): Promise<{ repository: string; database: st
   return { repository, database: join(directory, 'history.sqlite3') };
 }
 
+async function withDatabasePath<T>(database: string, work: () => Promise<T>): Promise<T> {
+  const previous = process.env.VERIFY_DATABASE_PATH;
+  process.env.VERIFY_DATABASE_PATH = database;
+  try {
+    return await work();
+  } finally {
+    if (previous === undefined) delete process.env.VERIFY_DATABASE_PATH;
+    else process.env.VERIFY_DATABASE_PATH = previous;
+  }
+}
+
 function withoutVolatileProfileFields(result: ProjectProfileResult): unknown {
   if (result.status === 'cancelled') return result;
   return {
@@ -890,6 +901,195 @@ describe('reviewable configuration migration interfaces', () => {
     });
     expect(await readFile(preview.path, 'utf8')).toBe(`${source}# manual comment after preview\n`);
     await expect(readFile(database, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+});
+
+describe('explicit executable-policy approval interfaces', () => {
+  it('keeps migration unapproved and exposes one normalized status through core, CLI, and protocol', async () => {
+    const { repository, database } = await fixture('basic-pass');
+    await withDatabasePath(database, async () => {
+      const composition = createApplicationComposition();
+      openCompositions.push(composition);
+      const legacy = await composition.application.getPolicyApprovalStatus(repository);
+      expect(legacy).toMatchObject({ status: 'migration-required', policyVersion: 1 });
+      const unavailable = await runCliProcess(
+        [
+          'config',
+          'approval',
+          'approve',
+          repository,
+          '--expected-digest',
+          'a'.repeat(64),
+          '--json',
+        ],
+        database,
+      );
+      expect(unavailable).toMatchObject({ code: 2, stderr: '' });
+      expect(JSON.parse(unavailable.stdout)).toMatchObject({
+        error: { code: 'APPROVAL_UNAVAILABLE' },
+      });
+      const unavailableFrames: string[] = [];
+      await handleProtocolRequest(
+        composition.application,
+        {
+          protocolVersion: PROTOCOL_VERSION,
+          id: 'legacy-approval',
+          method: 'config.approval.approve',
+          params: { repository, expectedPolicyDigest: 'a'.repeat(64) },
+        },
+        { write: (frame) => unavailableFrames.push(frame), diagnostic: () => undefined },
+      );
+      expect(decodeResultLine('config.approval.approve', unavailableFrames[0] ?? '')).toMatchObject(
+        {
+          error: { code: 'APPROVAL_UNAVAILABLE' },
+        },
+      );
+      const preview = await composition.application.previewProjectConfigMigration(repository);
+      await composition.application.applyProjectConfigMigration({
+        repository,
+        expectedSourceDigest: preview.sourceDigest,
+        expectedTargetDigest: preview.targetDigest,
+      });
+
+      const core = await composition.application.getPolicyApprovalStatus(repository);
+      expect(core).toMatchObject({
+        policyExists: true,
+        policyVersion: 2,
+        status: 'not-approved',
+        receipt: null,
+      });
+      const cli = await runCli(['config', 'approval', 'status', repository, '--json'], database);
+      expect(cli).toMatchObject({ code: 0, stderr: '' });
+      expect(JSON.parse(cli.stdout)).toEqual(core);
+
+      const frames: string[] = [];
+      await handleProtocolRequest(
+        composition.application,
+        {
+          protocolVersion: PROTOCOL_VERSION,
+          id: 'approval-status',
+          method: 'config.approval.status',
+          params: { repository },
+        },
+        { write: (frame) => frames.push(frame), diagnostic: () => undefined },
+      );
+      expect(decodeResultLine('config.approval.status', frames[0] ?? '')).toMatchObject({
+        result: core,
+      });
+
+      const missingDigest = await runCliProcess(
+        ['config', 'approval', 'approve', repository, '--json'],
+        database,
+      );
+      expect(missingDigest).toMatchObject({ code: 2, stderr: '' });
+      expect(JSON.parse(missingDigest.stdout)).toMatchObject({ error: { code: 'VERIFY_ERROR' } });
+      expect(await composition.application.getPolicyApprovalStatus(repository)).toEqual(core);
+    });
+  });
+
+  it('requires an explicit reviewed digest, reports stale edits, and revokes through all interfaces', async () => {
+    const { repository, database } = await fixture('basic-pass');
+    await withDatabasePath(database, async () => {
+      const composition = createApplicationComposition();
+      openCompositions.push(composition);
+      const preview = await composition.application.previewProjectConfigMigration(repository);
+      await composition.application.applyProjectConfigMigration({
+        repository,
+        expectedSourceDigest: preview.sourceDigest,
+        expectedTargetDigest: preview.targetDigest,
+      });
+      const before = await composition.application.getPolicyApprovalStatus(repository);
+      if (before.policyDigest === null) throw new Error('Expected a schema-v2 executable digest.');
+
+      const approve = await runCli(
+        [
+          'config',
+          'approval',
+          'approve',
+          repository,
+          '--expected-digest',
+          before.policyDigest,
+          '--json',
+        ],
+        database,
+      );
+      expect(approve).toMatchObject({ code: 0, stderr: '' });
+      const approved = JSON.parse(approve.stdout) as ProtocolResultMap['config.approval.approve'];
+      expect(approved).toMatchObject({ status: 'approved', policyDigest: before.policyDigest });
+      const human = await runCli(['config', 'approval', 'status', repository], database);
+      expect(human.stdout).toContain('Executable policy: Approved');
+      expect(human.stdout).toContain(before.policyDigest);
+      expect(human.stdout).toContain('test: npm test');
+      expect(human.stdout).toContain('Quick plan suite order:');
+
+      const policyPath = join(repository, '.verify', 'project.yml');
+      const yaml = await readFile(policyPath, 'utf8');
+      await writeFile(policyPath, `${yaml}# presentation-only edit\n`);
+      expect(await composition.application.getPolicyApprovalStatus(repository)).toMatchObject({
+        status: 'approved',
+        policyDigest: before.policyDigest,
+      });
+
+      const edited = (await readFile(policyPath, 'utf8')).replace(
+        'command: npm test',
+        'command: npm run changed-test',
+      );
+      await writeFile(policyPath, edited);
+      const outdated = await composition.application.getPolicyApprovalStatus(repository);
+      expect(outdated.status).toBe('outdated');
+      expect(outdated.policyDigest).not.toBe(before.policyDigest);
+      expect(outdated.receipt?.policyDigest).toBe(before.policyDigest);
+
+      const stale = await runCliProcess(
+        [
+          'config',
+          'approval',
+          'approve',
+          repository,
+          '--expected-digest',
+          before.policyDigest,
+          '--json',
+        ],
+        database,
+      );
+      expect(stale).toMatchObject({ code: 2, stderr: '' });
+      expect(JSON.parse(stale.stdout)).toMatchObject({ error: { code: 'APPROVAL_STALE' } });
+
+      const staleFrames: string[] = [];
+      await handleProtocolRequest(
+        composition.application,
+        {
+          protocolVersion: PROTOCOL_VERSION,
+          id: 'approval-stale',
+          method: 'config.approval.approve',
+          params: { repository, expectedPolicyDigest: before.policyDigest },
+        },
+        { write: (frame) => staleFrames.push(frame), diagnostic: () => undefined },
+      );
+      expect(decodeResultLine('config.approval.approve', staleFrames[0] ?? '')).toMatchObject({
+        error: { code: 'APPROVAL_STALE' },
+      });
+
+      const frames: string[] = [];
+      await handleProtocolRequest(
+        composition.application,
+        {
+          protocolVersion: PROTOCOL_VERSION,
+          id: 'approval-revoke',
+          method: 'config.approval.revoke',
+          params: { repository },
+        },
+        { write: (frame) => frames.push(frame), diagnostic: () => undefined },
+      );
+      const revoked = decodeResultLine('config.approval.revoke', frames[0] ?? '');
+      expect(revoked).toMatchObject({ result: { status: 'revoked' } });
+      if (!('result' in revoked)) throw new Error('Expected a revocation result.');
+      const cli = await runCli(['config', 'approval', 'status', repository, '--json'], database);
+      expect(JSON.parse(cli.stdout)).toEqual(revoked.result);
+      expect(await composition.application.getPolicyApprovalStatus(repository)).toEqual(
+        revoked.result,
+      );
+    });
   });
 });
 

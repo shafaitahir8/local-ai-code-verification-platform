@@ -24,6 +24,10 @@ export interface MockEngineClientOptions {
   readonly migrationStale?: boolean;
   readonly migrationLatencyMs?: number;
   readonly migrationPreviewBarrier?: Promise<void>;
+  readonly initialApprovalStatus?: 'not-approved' | 'approved' | 'outdated' | 'revoked';
+  readonly approvalStale?: boolean;
+  readonly approvalStatusBarrier?: Promise<void>;
+  readonly approvalReviewTestCommand?: string;
 }
 
 type VerificationRun = ProtocolResultMap['verification.run'];
@@ -363,6 +367,8 @@ function configV2For(repository: string): ProjectConfigV2 {
 
 const MOCK_SOURCE_DIGEST = 'a'.repeat(64);
 const MOCK_TARGET_DIGEST = 'b'.repeat(64);
+const MOCK_EXECUTABLE_DIGEST = 'c'.repeat(64);
+const MOCK_OUTDATED_DIGEST = 'd'.repeat(64);
 const MOCK_TARGET_YAML = `version: 2
 project:
   name: example
@@ -594,6 +600,14 @@ export class MockEngineClient implements EngineClient {
   readonly #migrationStale: boolean;
   readonly #migrationLatencyMs: number;
   readonly #migrationPreviewBarrier?: Promise<void>;
+  readonly #initialApprovalStatus: NonNullable<MockEngineClientOptions['initialApprovalStatus']>;
+  readonly #approvalStale: boolean;
+  readonly #approvalReviewTestCommand?: string;
+  #approvalStatusBarrier?: Promise<void>;
+  readonly #approvalByRepository = new Map<
+    string,
+    NonNullable<ProtocolResultMap['config.approval.status']['receipt']>
+  >();
   #configExists: boolean;
   #policyVersion: 1 | 2;
 
@@ -611,7 +625,74 @@ export class MockEngineClient implements EngineClient {
     this.#migrationStale = options.migrationStale ?? false;
     this.#migrationLatencyMs = options.migrationLatencyMs ?? this.#latencyMs;
     this.#migrationPreviewBarrier = options.migrationPreviewBarrier;
+    this.#initialApprovalStatus = options.initialApprovalStatus ?? 'not-approved';
+    this.#approvalStale = options.approvalStale ?? false;
+    this.#approvalReviewTestCommand = options.approvalReviewTestCommand;
+    this.#approvalStatusBarrier = options.approvalStatusBarrier;
     this.#policyVersion = options.initialPolicyVersion ?? 1;
+  }
+
+  #approvalStatus(repository: string): ProtocolResultMap['config.approval.status'] {
+    if (this.#policyVersion === 2 && !this.#approvalByRepository.has(repository)) {
+      const initial = this.#initialApprovalStatus;
+      if (initial !== 'not-approved') {
+        this.#approvalByRepository.set(repository, {
+          id: `mock-approval-${projectName(repository)}`,
+          repositoryRoot: repository,
+          policySchemaVersion: 2,
+          digestVersion: 1,
+          policyDigest: initial === 'outdated' ? MOCK_OUTDATED_DIGEST : MOCK_EXECUTABLE_DIGEST,
+          approvedAt: iso(11_000),
+          revokedAt: initial === 'revoked' ? iso(12_000) : null,
+        });
+      }
+    }
+    const receipt = this.#approvalByRepository.get(repository) ?? null;
+    const policyVersion = this.#configExists ? this.#policyVersion : null;
+    const policyDigest = policyVersion === 2 ? MOCK_EXECUTABLE_DIGEST : null;
+    const status = !this.#configExists
+      ? 'policy-missing'
+      : policyVersion === 1
+        ? 'migration-required'
+        : receipt === null
+          ? 'not-approved'
+          : receipt.revokedAt !== null
+            ? 'revoked'
+            : receipt.policyDigest !== policyDigest
+              ? 'outdated'
+              : 'approved';
+    return {
+      repositoryRoot: repository,
+      policyPath: `${repository}/.verify/project.yml`,
+      policyExists: this.#configExists,
+      policyVersion,
+      policyDigest,
+      status,
+      receipt,
+      review:
+        policyVersion === 2
+          ? {
+              digestVersion: 1,
+              policySchemaVersion: 2,
+              suites: Object.entries(configV2For(repository).suites).map(([id, suite]) => ({
+                id,
+                type: suite.type,
+                command:
+                  id === 'test' && this.#approvalReviewTestCommand
+                    ? this.#approvalReviewTestCommand
+                    : suite.command,
+                failurePolicy: suite.failure_policy,
+                timeoutMs: suite.timeout_ms ?? null,
+              })),
+              plans: {
+                quick: [...configV2For(repository).plans.quick.suites],
+                full: [...configV2For(repository).plans.full.suites],
+              },
+              launchTargets: {},
+              overrides: {},
+            }
+          : null,
+    };
   }
 
   public async request<Method extends ProtocolMethod>(
@@ -619,6 +700,9 @@ export class MockEngineClient implements EngineClient {
     params: ProtocolParamsMap[Method],
     options: EngineRequestOptions = {},
   ): Promise<ProtocolResultMap[Method]> {
+    const approvalStatusBarrier =
+      method === 'config.approval.status' ? this.#approvalStatusBarrier : undefined;
+    if (method === 'config.approval.status') this.#approvalStatusBarrier = undefined;
     if (method === 'config.migrate.preview' || method === 'config.migrate.apply') {
       await pause(this.#migrationLatencyMs, options.signal);
     } else if (
@@ -855,6 +939,41 @@ export class MockEngineClient implements EngineClient {
           targetDigest: MOCK_TARGET_DIGEST,
           config: configV2For(repository),
         } as ProtocolResultMap[Method];
+
+      case 'config.approval.status': {
+        await approvalStatusBarrier;
+        return this.#approvalStatus(repository) as ProtocolResultMap[Method];
+      }
+
+      case 'config.approval.approve': {
+        if (
+          !this.#configExists ||
+          this.#policyVersion !== 2 ||
+          this.#approvalStale ||
+          !('expectedPolicyDigest' in params) ||
+          params.expectedPolicyDigest !== MOCK_EXECUTABLE_DIGEST
+        ) {
+          throw new EngineRequestError('APPROVAL_STALE', 'The reviewed executable policy changed.');
+        }
+        this.#approvalByRepository.set(repository, {
+          id: `mock-approval-${projectName(repository)}`,
+          repositoryRoot: repository,
+          policySchemaVersion: 2,
+          digestVersion: 1,
+          policyDigest: MOCK_EXECUTABLE_DIGEST,
+          approvedAt: iso(13_000),
+          revokedAt: null,
+        });
+        return this.#approvalStatus(repository) as ProtocolResultMap[Method];
+      }
+
+      case 'config.approval.revoke': {
+        const receipt = this.#approvalByRepository.get(repository);
+        if (receipt && receipt.revokedAt === null) {
+          this.#approvalByRepository.set(repository, { ...receipt, revokedAt: iso(14_000) });
+        }
+        return this.#approvalStatus(repository) as ProtocolResultMap[Method];
+      }
 
       case 'config.init':
         this.#configExists = true;

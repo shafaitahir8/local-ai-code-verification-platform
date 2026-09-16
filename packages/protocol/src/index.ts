@@ -56,6 +56,9 @@ export type {
   UnknownProtocolResultMessage,
 } from './messages.js';
 export {
+  approvalReceiptSchema,
+  executablePolicyReviewSchema,
+  policyApprovalStatusSchema,
   projectConfigSchema,
   projectConfigV2Schema,
   projectPolicyResultSchema,

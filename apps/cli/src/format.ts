@@ -10,6 +10,56 @@ import type {
 } from '@verify/domain';
 import type { ProtocolResultMap } from '@verify/protocol';
 
+export function formatPolicyApprovalStatus(
+  result: ProtocolResultMap['config.approval.status'],
+): string {
+  const labels: Record<typeof result.status, string> = {
+    'policy-missing': 'No project policy',
+    'policy-invalid': 'Project policy is invalid; approval unavailable',
+    'migration-required': 'Migration required before approval',
+    'not-approved': 'Not approved',
+    approved: 'Approved',
+    outdated: 'Approval outdated because executable policy changed',
+    revoked: 'Approval revoked',
+  };
+  const lines = [
+    `Executable policy: ${labels[result.status]}`,
+    `Repository: ${result.repositoryRoot}`,
+    `Policy: ${result.policyPath}`,
+    `Schema version: ${result.policyVersion ?? 'none'}`,
+  ];
+  if (result.policyDigest !== null) {
+    lines.push(`Executable-policy digest: ${result.policyDigest}`);
+  }
+  if (result.review !== null) {
+    lines.push('Reviewed executable suites:');
+    if (result.review.suites.length === 0) lines.push('  none');
+    for (const suite of result.review.suites) {
+      lines.push(
+        `  ${suite.id}: ${suite.command} (${suite.type}; ${suite.failurePolicy}; ${suite.timeoutMs === null ? 'default timeout' : `timeout ${suite.timeoutMs} ms`})`,
+      );
+    }
+    lines.push(`Quick plan suite order: ${result.review.plans.quick.join(', ') || 'none'}`);
+    lines.push(`Full plan suite order: ${result.review.plans.full.join(', ') || 'none'}`);
+    lines.push('Launch targets: none (not supported in this slice)');
+    lines.push('Executable overrides: none (not supported in this slice)');
+  }
+  if (result.receipt !== null) {
+    lines.push(`Receipt: ${result.receipt.id} (${result.receipt.policyDigest})`);
+    lines.push(`Approved at: ${result.receipt.approvedAt}`);
+    if (result.receipt.revokedAt !== null) lines.push(`Revoked at: ${result.receipt.revokedAt}`);
+  }
+  if (
+    result.status === 'not-approved' ||
+    result.status === 'outdated' ||
+    result.status === 'revoked'
+  ) {
+    lines.push('Approval requires an explicit approve command with the reviewed current digest.');
+  }
+  lines.push('Approval does not run checks or change the quality gate.');
+  return lines.join('\n');
+}
+
 export function formatProjectConfigMigrationPreview(
   preview: ProtocolResultMap['config.migrate.preview'],
 ): string {

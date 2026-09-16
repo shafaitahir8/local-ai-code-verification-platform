@@ -4,11 +4,19 @@ import type {
   ProjectConfigV2,
   ProjectDiscovery,
 } from '@verify/config';
+import { ConfigValidationError } from '@verify/config';
 import type { ProjectProfileResult, RepositoryChange, VerificationRun } from '@verify/domain';
+import type { ApprovalReceipt } from '@verify/domain';
 import { describe, expect, it, vi } from 'vitest';
 
-import { NoVerificationRunError, VerifierApplication } from '../src/index.js';
+import {
+  NoVerificationRunError,
+  PolicyApprovalStaleError,
+  PolicyApprovalUnavailableError,
+  VerifierApplication,
+} from '../src/index.js';
 import type {
+  ApprovalReceiptPort,
   ConfigurationPort,
   ProjectProfilerPort,
   RepositoryPort,
@@ -56,6 +64,7 @@ const discovery: ProjectDiscovery = {
 
 function dependencies() {
   const saved: VerificationRun[] = [];
+  const receipts: ApprovalReceipt[] = [];
   const configuration: ConfigurationPort = {
     exists: async () => true,
     load: async () => config,
@@ -145,10 +154,136 @@ function dependencies() {
     getLatestRun: async () => saved[0] ?? null,
     listRuns: async (_repositoryRoot, limit = 20) => saved.slice(0, limit),
   };
-  return { configuration, repository, profiler, verification, runs, saved };
+  const approvals: ApprovalReceiptPort = {
+    getLatestApprovalReceipt: async () =>
+      receipts.findLast((receipt) => receipt.revokedAt === null) ?? receipts.at(-1) ?? null,
+    approvePolicyReceipt: async (receipt) => {
+      for (const previous of receipts) {
+        if (previous.revokedAt === null) {
+          receipts[receipts.indexOf(previous)] = { ...previous, revokedAt: receipt.approvedAt };
+        }
+      }
+      receipts.push(receipt);
+      return receipt;
+    },
+    revokeActiveApprovalReceipt: async (_repositoryRoot, revokedAt) => {
+      const active = receipts.findLast((receipt) => receipt.revokedAt === null);
+      if (active === undefined) return receipts.at(-1) ?? null;
+      const revoked = { ...active, revokedAt };
+      receipts[receipts.indexOf(active)] = revoked;
+      return revoked;
+    },
+  };
+  return { configuration, repository, profiler, verification, runs, approvals, saved, receipts };
 }
 
 describe('VerifierApplication', () => {
+  it('requires migration before approval and never approves during migration', async () => {
+    const ports = dependencies();
+    const application = new VerifierApplication(ports);
+    expect(await application.getPolicyApprovalStatus(root)).toMatchObject({
+      policyExists: true,
+      policyVersion: 1,
+      status: 'migration-required',
+      receipt: null,
+    });
+    await application.applyProjectConfigMigration({
+      repository: root,
+      expectedSourceDigest: sourceDigest,
+      expectedTargetDigest: targetDigest,
+    });
+    expect(ports.receipts).toEqual([]);
+    await expect(
+      application.approveProjectPolicy({ repository: root, expectedPolicyDigest: 'a'.repeat(64) }),
+    ).rejects.toBeInstanceOf(PolicyApprovalUnavailableError);
+  });
+
+  it('approves only the reviewed current digest and reports stale and revoked states', async () => {
+    const ports = dependencies();
+    ports.configuration.loadPolicy = async () => migratedConfig;
+    ports.verification.run = async () => {
+      throw new Error('Approval must not execute a project command.');
+    };
+    ports.runs.saveRun = async () => {
+      throw new Error('Approval must not save verification history.');
+    };
+    const application = new VerifierApplication({
+      ...ports,
+      createApprovalReceiptId: () => 'receipt-1',
+      now: () => new Date('2026-09-16T00:00:00.000Z'),
+    });
+    const initial = await application.getPolicyApprovalStatus(root);
+    expect(initial.status).toBe('not-approved');
+    expect(initial.policyDigest).toMatch(/^[a-f0-9]{64}$/u);
+    await expect(
+      application.approveProjectPolicy({ repository: root, expectedPolicyDigest: '0'.repeat(64) }),
+    ).rejects.toBeInstanceOf(PolicyApprovalStaleError);
+    expect(ports.receipts).toEqual([]);
+
+    const approved = await application.approveProjectPolicy({
+      repository: root,
+      expectedPolicyDigest: initial.policyDigest!,
+    });
+    expect(approved.status).toBe('approved');
+    expect(approved.receipt?.repositoryRoot).toBe(root);
+    expect(ports.receipts).toHaveLength(1);
+    await application.approveProjectPolicy({
+      repository: root,
+      expectedPolicyDigest: initial.policyDigest!,
+    });
+    expect(ports.receipts).toHaveLength(1);
+
+    ports.configuration.loadPolicy = async () => ({
+      ...migratedConfig,
+      suites: {
+        ...migratedConfig.suites,
+        test: { ...migratedConfig.suites.test!, command: 'npm test --changed' },
+      },
+    });
+    expect((await application.getPolicyApprovalStatus(root)).status).toBe('outdated');
+    expect((await application.revokeProjectPolicyApproval(root)).status).toBe('revoked');
+    expect(ports.receipts[0]?.revokedAt).toBe('2026-09-16T00:00:00.000Z');
+    expect(ports.saved).toEqual([]);
+  });
+
+  it('revokes an active receipt even while policy is absent, version 1, or malformed', async () => {
+    for (const unavailable of ['missing', 'version-one', 'malformed'] as const) {
+      const ports = dependencies();
+      ports.configuration.loadPolicy = async () => migratedConfig;
+      const application = new VerifierApplication({
+        ...ports,
+        createApprovalReceiptId: () => `receipt-${unavailable}`,
+        now: () => new Date('2026-09-17T00:00:00.000Z'),
+      });
+      const digest = (await application.getPolicyApprovalStatus(root)).policyDigest!;
+      await application.approveProjectPolicy({ repository: root, expectedPolicyDigest: digest });
+
+      if (unavailable === 'missing') ports.configuration.exists = async () => false;
+      if (unavailable === 'version-one') ports.configuration.loadPolicy = async () => config;
+      if (unavailable === 'malformed') {
+        ports.configuration.loadPolicy = async () => {
+          throw new ConfigValidationError([{ path: '$', message: 'invalid policy' }]);
+        };
+      }
+
+      const unavailableStatus = await application.getPolicyApprovalStatus(root);
+      expect(unavailableStatus.status).toBe(
+        unavailable === 'missing'
+          ? 'policy-missing'
+          : unavailable === 'version-one'
+            ? 'migration-required'
+            : 'policy-invalid',
+      );
+      expect(unavailableStatus.receipt?.revokedAt).toBeNull();
+      const revoked = await application.revokeProjectPolicyApproval(root);
+      expect(revoked.receipt?.revokedAt).toBe('2026-09-17T00:00:00.000Z');
+
+      ports.configuration.exists = async () => true;
+      ports.configuration.loadPolicy = async () => migratedConfig;
+      expect((await application.getPolicyApprovalStatus(root)).status).toBe('revoked');
+    }
+  });
+
   it('projects policy and migration through the configuration port without executing or persisting', async () => {
     const ports = dependencies();
     const preview = vi.spyOn(ports.configuration, 'migrationPreview');

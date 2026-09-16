@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { EngineRequestError, type EngineClient } from '../engine/index.js';
 import type {
+  ApprovalPhase,
+  ApprovalStatus,
   ConfigResult,
   DiscoveryResult,
   InspectionResult,
@@ -39,6 +41,9 @@ export interface DashboardController {
   readonly profileProgress?: ProjectProfileProgress;
   readonly profileError?: string;
   readonly config?: ConfigResult;
+  readonly approval?: ApprovalStatus;
+  readonly approvalPhase: ApprovalPhase;
+  readonly approvalError?: string;
   readonly migrationPreview?: MigrationPreview;
   readonly migrationPhase: MigrationPhase;
   readonly migrationError?: string;
@@ -58,6 +63,9 @@ export interface DashboardController {
   readonly initializeProject: () => Promise<void>;
   readonly previewMigration: () => Promise<void>;
   readonly applyMigration: () => Promise<void>;
+  readonly refreshApproval: () => Promise<void>;
+  readonly approvePolicy: () => Promise<void>;
+  readonly revokeApproval: () => Promise<void>;
   readonly runVerification: () => Promise<void>;
   readonly stopVerification: () => void;
   readonly selectHistoryRun: (runId?: string) => void;
@@ -76,6 +84,9 @@ export function useDashboard(
   const [profileProgress, setProfileProgress] = useState<ProjectProfileProgress>();
   const [profileError, setProfileError] = useState<string>();
   const [config, setConfig] = useState<ConfigResult>();
+  const [approval, setApproval] = useState<ApprovalStatus>();
+  const [approvalPhase, setApprovalPhase] = useState<ApprovalPhase>('idle');
+  const [approvalError, setApprovalError] = useState<string>();
   const [migrationPreview, setMigrationPreview] = useState<MigrationPreview>();
   const [migrationPhase, setMigrationPhase] = useState<MigrationPhase>('idle');
   const [migrationError, setMigrationError] = useState<string>();
@@ -90,11 +101,50 @@ export function useDashboard(
   const [error, setError] = useState<string>();
   const loadGeneration = useRef(0);
   const migrationGeneration = useRef(0);
+  const approvalGeneration = useRef(0);
   const runController = useRef<AbortController | undefined>(undefined);
   const profileController = useRef<AbortController | undefined>(undefined);
   const currentRepository = useRef('');
   const initialRepositoryOpened = useRef(false);
   const profile = planPreview?.profile;
+
+  const refreshApprovalStatus = useCallback(
+    async (selectedRepository: string, repositoryGeneration: number, refreshPolicy = false) => {
+      const operationGeneration = approvalGeneration.current + 1;
+      approvalGeneration.current = operationGeneration;
+      setApproval(undefined);
+      setApprovalPhase('loading');
+      setApprovalError(undefined);
+
+      try {
+        const [nextPolicy, nextApproval] = await Promise.all([
+          refreshPolicy
+            ? client.request('config.policy.get', { repository: selectedRepository })
+            : Promise.resolve(undefined),
+          client.request('config.approval.status', { repository: selectedRepository }),
+        ]);
+        if (
+          repositoryGeneration !== loadGeneration.current ||
+          operationGeneration !== approvalGeneration.current
+        ) {
+          return;
+        }
+        if (nextPolicy) setConfig(nextPolicy);
+        setApproval(nextApproval);
+        setApprovalPhase('ready');
+      } catch (approvalRequestError) {
+        if (
+          repositoryGeneration !== loadGeneration.current ||
+          operationGeneration !== approvalGeneration.current
+        ) {
+          return;
+        }
+        setApprovalPhase('error');
+        setApprovalError(errorMessage(approvalRequestError));
+      }
+    },
+    [client],
+  );
 
   const requestProjectPlanPreview = useCallback(
     async (selectedRepository: string, generation: number) => {
@@ -178,6 +228,7 @@ export function useDashboard(
       const generation = loadGeneration.current + 1;
       loadGeneration.current = generation;
       migrationGeneration.current += 1;
+      approvalGeneration.current += 1;
       runController.current?.abort();
       profileController.current?.abort();
       const repositoryChanged = currentRepository.current !== selectedRepository;
@@ -187,6 +238,9 @@ export function useDashboard(
       }
       setRepository(selectedRepository);
       setConfig(undefined);
+      setApproval(undefined);
+      setApprovalPhase('idle');
+      setApprovalError(undefined);
       setMigrationPreview(undefined);
       setMigrationPhase('idle');
       setMigrationError(undefined);
@@ -223,6 +277,7 @@ export function useDashboard(
         setHistory(nextHistory.runs);
         setLoadPhase('ready');
         setLiveAnnouncement(`${nextDiscovery.projectName} is ready.`);
+        void refreshApprovalStatus(selectedRepository, generation);
         void requestProjectPlanPreview(selectedRepository, generation);
       } catch (loadError) {
         if (generation !== loadGeneration.current) {
@@ -233,7 +288,7 @@ export function useDashboard(
         setLiveAnnouncement('Repository loading failed.');
       }
     },
-    [client, requestProjectPlanPreview],
+    [client, refreshApprovalStatus, requestProjectPlanPreview],
   );
 
   const understandProject = useCallback(async () => {
@@ -264,6 +319,7 @@ export function useDashboard(
   useEffect(
     () => () => {
       loadGeneration.current += 1;
+      approvalGeneration.current += 1;
       runController.current?.abort();
       profileController.current?.abort();
     },
@@ -275,11 +331,14 @@ export function useDashboard(
       return;
     }
 
+    const generation = loadGeneration.current;
+    const selectedRepository = repository;
     setError(undefined);
     setLiveAnnouncement('Initializing project configuration.');
     try {
       const initialized = await client.request('config.init', { repository });
       const nextPolicy = await client.request('config.policy.get', { repository });
+      if (generation !== loadGeneration.current) return;
       setConfig(nextPolicy);
       setMigrationPreview(undefined);
       setMigrationPhase('idle');
@@ -288,11 +347,13 @@ export function useDashboard(
           ? 'Project configuration replaced.'
           : 'Project configuration created.',
       );
+      void refreshApprovalStatus(selectedRepository, generation);
     } catch (initializationError) {
+      if (generation !== loadGeneration.current) return;
       setError(errorMessage(initializationError));
       setLiveAnnouncement('Project initialization failed.');
     }
-  }, [client, repository]);
+  }, [client, refreshApprovalStatus, repository]);
 
   const previewMigration = useCallback(async () => {
     if (!repository || config?.config?.version !== 1) {
@@ -363,6 +424,8 @@ export function useDashboard(
       setMigrationPreview(undefined);
       setMigrationPhase('applied');
       setLiveAnnouncement('Configuration migration applied. Commands were not approved or run.');
+      setApproval(undefined);
+      setApprovalPhase('loading');
 
       try {
         const nextPolicy = await client.request('config.policy.get', {
@@ -375,6 +438,7 @@ export function useDashboard(
           return;
         }
         setConfig(nextPolicy);
+        void refreshApprovalStatus(selectedRepository, repositoryGeneration);
       } catch (refreshError) {
         if (
           repositoryGeneration !== loadGeneration.current ||
@@ -402,13 +466,106 @@ export function useDashboard(
         setLiveAnnouncement(
           'The migration preview is stale. Nothing was overwritten; review the current policy again.',
         );
+        void refreshApprovalStatus(selectedRepository, repositoryGeneration, true);
       } else {
         setMigrationPhase('error');
         setMigrationError(errorMessage(migrationRequestError));
         setLiveAnnouncement('Migration apply failed. No command was run.');
       }
     }
-  }, [client, config?.config?.version, migrationPreview, repository]);
+  }, [client, config?.config?.version, migrationPreview, refreshApprovalStatus, repository]);
+
+  const refreshApproval = useCallback(async () => {
+    if (!repository || loadPhase !== 'ready') return;
+    await refreshApprovalStatus(repository, loadGeneration.current, true);
+  }, [loadPhase, refreshApprovalStatus, repository]);
+
+  const approvePolicy = useCallback(async () => {
+    if (
+      !repository ||
+      approval?.review === null ||
+      approval?.review === undefined ||
+      !approval?.policyDigest ||
+      (approval.status !== 'not-approved' &&
+        approval.status !== 'outdated' &&
+        approval.status !== 'revoked') ||
+      approvalPhase !== 'ready'
+    ) {
+      return;
+    }
+    const selectedRepository = repository;
+    const expectedPolicyDigest = approval.policyDigest;
+    const repositoryGeneration = loadGeneration.current;
+    const operationGeneration = approvalGeneration.current + 1;
+    approvalGeneration.current = operationGeneration;
+    setApprovalPhase('approving');
+    setApprovalError(undefined);
+    setLiveAnnouncement('Approving the reviewed executable policy. No command will run.');
+    try {
+      const nextApproval = await client.request('config.approval.approve', {
+        repository: selectedRepository,
+        expectedPolicyDigest,
+      });
+      if (
+        repositoryGeneration !== loadGeneration.current ||
+        operationGeneration !== approvalGeneration.current
+      ) {
+        return;
+      }
+      setApproval(nextApproval);
+      setApprovalPhase('ready');
+      setLiveAnnouncement('The current executable policy is approved for future actions.');
+    } catch (approvalRequestError) {
+      if (
+        repositoryGeneration !== loadGeneration.current ||
+        operationGeneration !== approvalGeneration.current
+      ) {
+        return;
+      }
+      setApproval(undefined);
+      setApprovalPhase('error');
+      setApprovalError(errorMessage(approvalRequestError));
+      setLiveAnnouncement('Policy approval failed. No command was run. Refresh before retrying.');
+    }
+  }, [approval, approvalPhase, client, repository]);
+
+  const revokeApproval = useCallback(async () => {
+    if (!repository || approval?.receipt?.revokedAt !== null || approvalPhase !== 'ready') {
+      return;
+    }
+    const selectedRepository = repository;
+    const repositoryGeneration = loadGeneration.current;
+    const operationGeneration = approvalGeneration.current + 1;
+    approvalGeneration.current = operationGeneration;
+    setApprovalPhase('revoking');
+    setApprovalError(undefined);
+    setLiveAnnouncement('Revoking executable policy approval.');
+    try {
+      const nextApproval = await client.request('config.approval.revoke', {
+        repository: selectedRepository,
+      });
+      if (
+        repositoryGeneration !== loadGeneration.current ||
+        operationGeneration !== approvalGeneration.current
+      ) {
+        return;
+      }
+      setApproval(nextApproval);
+      setApprovalPhase('ready');
+      setLiveAnnouncement('Policy approval revoked.');
+    } catch (approvalRequestError) {
+      if (
+        repositoryGeneration !== loadGeneration.current ||
+        operationGeneration !== approvalGeneration.current
+      ) {
+        return;
+      }
+      setApproval(undefined);
+      setApprovalPhase('error');
+      setApprovalError(errorMessage(approvalRequestError));
+      setLiveAnnouncement('Revocation could not be confirmed. Refresh approval status.');
+    }
+  }, [approval?.receipt?.revokedAt, approvalPhase, client, repository]);
 
   const runVerification = useCallback(async () => {
     if (!repository || !config?.exists) {
@@ -552,6 +709,9 @@ export function useDashboard(
     profileProgress,
     profileError,
     config,
+    approval,
+    approvalPhase,
+    approvalError,
     migrationPreview,
     migrationPhase,
     migrationError,
@@ -571,6 +731,9 @@ export function useDashboard(
     initializeProject,
     previewMigration,
     applyMigration,
+    refreshApproval,
+    approvePolicy,
+    revokeApproval,
     runVerification,
     stopVerification,
     selectHistoryRun,

@@ -1,3 +1,4 @@
+import type { ApprovalReceipt, ExecutablePolicyReview, PolicyApprovalStatus } from '@verify/domain';
 import { z } from 'zod';
 
 import {
@@ -16,6 +17,142 @@ const repositoryParamsSchema = z.strictObject({
 
 const requestIdSchema = z.string().min(1).max(256);
 const configDigestSchema = z.string().regex(/^[a-f0-9]{64}$/u);
+
+export const approvalReceiptSchema: z.ZodType<ApprovalReceipt> = z.strictObject({
+  id: z.string().min(1),
+  repositoryRoot: z.string().min(1),
+  policySchemaVersion: z.literal(2),
+  digestVersion: z.literal(1),
+  policyDigest: configDigestSchema,
+  approvedAt: z.iso.datetime(),
+  revokedAt: z.iso.datetime().nullable(),
+});
+
+export const executablePolicyReviewSchema: z.ZodType<ExecutablePolicyReview> = z.strictObject({
+  digestVersion: z.literal(1),
+  policySchemaVersion: z.literal(2),
+  suites: z.array(
+    z.strictObject({
+      id: z.string().min(1),
+      type: z.string().min(1),
+      command: z.string().min(1),
+      failurePolicy: z.enum(['block', 'warn']),
+      timeoutMs: z.number().int().positive().nullable(),
+    }),
+  ),
+  plans: z.strictObject({
+    quick: z.array(z.string().min(1)),
+    full: z.array(z.string().min(1)),
+  }),
+  launchTargets: z.strictObject({}),
+  overrides: z.strictObject({}),
+});
+
+export const policyApprovalStatusSchema: z.ZodType<PolicyApprovalStatus> = z
+  .strictObject({
+    repositoryRoot: z.string().min(1),
+    policyPath: z.string().min(1),
+    policyExists: z.boolean(),
+    policyVersion: z.union([z.literal(1), z.literal(2)]).nullable(),
+    policyDigest: configDigestSchema.nullable(),
+    review: executablePolicyReviewSchema.nullable(),
+    status: z.enum([
+      'policy-missing',
+      'policy-invalid',
+      'migration-required',
+      'not-approved',
+      'approved',
+      'outdated',
+      'revoked',
+    ]),
+    receipt: approvalReceiptSchema.nullable(),
+  })
+  .superRefine((value, context) => {
+    const invalid = (): void => {
+      context.addIssue({
+        code: 'custom',
+        message: 'Approval status is inconsistent with policy or receipt state.',
+      });
+    };
+    const receipt = value.receipt;
+    if (receipt !== null && receipt.repositoryRoot !== value.repositoryRoot) return invalid();
+    if (
+      value.status !== 'policy-missing' &&
+      value.status !== 'policy-invalid' &&
+      value.status !== 'migration-required' &&
+      value.review === null
+    )
+      return invalid();
+    switch (value.status) {
+      case 'policy-missing':
+        if (
+          value.policyExists ||
+          value.policyVersion !== null ||
+          value.policyDigest !== null ||
+          value.review !== null
+        )
+          invalid();
+        return;
+      case 'policy-invalid':
+        if (
+          !value.policyExists ||
+          value.policyVersion !== null ||
+          value.policyDigest !== null ||
+          value.review !== null
+        )
+          invalid();
+        return;
+      case 'migration-required':
+        if (
+          !value.policyExists ||
+          value.policyVersion !== 1 ||
+          value.policyDigest !== null ||
+          value.review !== null
+        )
+          invalid();
+        return;
+      case 'not-approved':
+        if (
+          !value.policyExists ||
+          value.policyVersion !== 2 ||
+          value.policyDigest === null ||
+          receipt !== null
+        )
+          invalid();
+        return;
+      case 'approved':
+        if (
+          !value.policyExists ||
+          value.policyVersion !== 2 ||
+          value.policyDigest === null ||
+          receipt === null ||
+          receipt.revokedAt !== null ||
+          receipt.policyDigest !== value.policyDigest
+        )
+          invalid();
+        return;
+      case 'outdated':
+        if (
+          !value.policyExists ||
+          value.policyVersion !== 2 ||
+          value.policyDigest === null ||
+          receipt === null ||
+          receipt.revokedAt !== null ||
+          receipt.policyDigest === value.policyDigest
+        )
+          invalid();
+        return;
+      case 'revoked':
+        if (
+          !value.policyExists ||
+          value.policyVersion !== 2 ||
+          value.policyDigest === null ||
+          receipt === null ||
+          receipt.revokedAt === null
+        )
+          invalid();
+    }
+  });
 
 const failurePolicySchema = z.enum(['block', 'warn']);
 
@@ -105,6 +242,11 @@ export const protocolParamsSchemas = {
     expectedSourceDigest: configDigestSchema,
     expectedTargetDigest: configDigestSchema,
   }),
+  'config.approval.status': repositoryParamsSchema,
+  'config.approval.approve': repositoryParamsSchema.extend({
+    expectedPolicyDigest: configDigestSchema,
+  }),
+  'config.approval.revoke': repositoryParamsSchema,
   'repository.inspect': repositoryParamsSchema,
   'verification.run': repositoryParamsSchema,
   'verification.cancel': z.strictObject({ targetRequestId: requestIdSchema }),
@@ -133,6 +275,9 @@ export const protocolResultSchemas = {
   'config.policy.get': projectPolicyResultSchema,
   'config.migrate.preview': projectConfigMigrationPreviewSchema,
   'config.migrate.apply': projectConfigMigrationApplySchema,
+  'config.approval.status': policyApprovalStatusSchema,
+  'config.approval.approve': policyApprovalStatusSchema,
+  'config.approval.revoke': policyApprovalStatusSchema,
   'repository.inspect': repositoryChangeSchema,
   'verification.run': verificationRunSchema,
   'verification.cancel': z.strictObject({ accepted: z.boolean() }),

@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, normalize, resolve } from 'node:path';
 
 import type {
+  ApprovalReceipt,
   Artifact,
   Finding,
   GateResult,
@@ -15,7 +16,7 @@ import BetterSqlite3 from 'better-sqlite3';
 import { asc, desc, eq, inArray } from 'drizzle-orm';
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 
-import type { ProjectRepository, RunRepository } from './contracts.js';
+import type { ApprovalReceiptRepository, ProjectRepository, RunRepository } from './contracts.js';
 import { runStorageMigrations } from './migrations/index.js';
 import {
   artifacts,
@@ -109,6 +110,57 @@ export function normalizeRepositoryRoot(repositoryRoot: string): string {
 function deterministicProjectId(repositoryRoot: string): string {
   const digest = createHash('sha256').update(repositoryRoot).digest('hex').slice(0, 24);
   return `project_${digest}`;
+}
+
+function isIsoTimestamp(value: string): boolean {
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
+}
+
+function assertReceiptForApproval(receipt: ApprovalReceipt): void {
+  if (
+    receipt.id.trim().length === 0 ||
+    receipt.repositoryRoot !== normalizeRepositoryRoot(receipt.repositoryRoot) ||
+    receipt.policySchemaVersion !== 2 ||
+    receipt.digestVersion !== 1 ||
+    !/^[a-f0-9]{64}$/u.test(receipt.policyDigest) ||
+    !isIsoTimestamp(receipt.approvedAt) ||
+    receipt.revokedAt !== null
+  ) {
+    throw new TypeError('The approval receipt is invalid or already revoked.');
+  }
+}
+
+function mapApprovalReceipt(value: unknown): ApprovalReceipt {
+  if (!isRecord(value)) {
+    throw new StorageCorruptionError('Stored approval receipt is malformed.');
+  }
+  const receipt = value;
+  if (
+    typeof receipt.id !== 'string' ||
+    typeof receipt.repository_root !== 'string' ||
+    receipt.policy_schema_version !== 2 ||
+    receipt.digest_version !== 1 ||
+    typeof receipt.policy_digest !== 'string' ||
+    !/^[a-f0-9]{64}$/u.test(receipt.policy_digest) ||
+    typeof receipt.approved_at !== 'string' ||
+    !isIsoTimestamp(receipt.approved_at) ||
+    !(
+      receipt.revoked_at === null ||
+      (typeof receipt.revoked_at === 'string' && isIsoTimestamp(receipt.revoked_at))
+    )
+  ) {
+    throw new StorageCorruptionError('Stored approval receipt has an invalid shape.');
+  }
+  return {
+    id: receipt.id,
+    repositoryRoot: receipt.repository_root,
+    policySchemaVersion: 2,
+    digestVersion: 1,
+    policyDigest: receipt.policy_digest,
+    approvedAt: receipt.approved_at,
+    revokedAt: receipt.revoked_at,
+  };
 }
 
 function parseJson(value: string, label: string): unknown {
@@ -239,7 +291,9 @@ function mapCheck(
   };
 }
 
-export class SqliteRunRepository implements RunRepository, ProjectRepository {
+export class SqliteRunRepository
+  implements RunRepository, ProjectRepository, ApprovalReceiptRepository
+{
   readonly #sqlite: BetterSqlite3.Database;
   readonly #database: BetterSQLite3Database<typeof storageSchema>;
   #closed = false;
@@ -298,6 +352,91 @@ export class SqliteRunRepository implements RunRepository, ProjectRepository {
           createdAt: row.createdAt,
         }
       : null;
+  }
+
+  public async getLatestApprovalReceipt(repositoryRoot: string): Promise<ApprovalReceipt | null> {
+    this.#assertOpen();
+    const normalizedRoot = normalizeRepositoryRoot(repositoryRoot);
+    const row: unknown = this.#sqlite
+      .prepare(
+        `SELECT id, repository_root, policy_schema_version, digest_version,
+                policy_digest, approved_at, revoked_at
+         FROM approval_receipts
+         WHERE repository_root = ?
+         ORDER BY CASE WHEN revoked_at IS NULL THEN 0 ELSE 1 END, row_id DESC
+         LIMIT 1`,
+      )
+      .get(normalizedRoot);
+    return row === undefined ? null : mapApprovalReceipt(row);
+  }
+
+  public async approvePolicyReceipt(receipt: ApprovalReceipt): Promise<ApprovalReceipt> {
+    this.#assertOpen();
+    assertReceiptForApproval(receipt);
+    const approve = this.#sqlite.transaction(() => {
+      this.#sqlite
+        .prepare(
+          `UPDATE approval_receipts SET revoked_at = ?
+           WHERE repository_root = ? AND revoked_at IS NULL`,
+        )
+        .run(receipt.approvedAt, receipt.repositoryRoot);
+      this.#sqlite
+        .prepare(
+          `INSERT INTO approval_receipts
+             (id, repository_root, policy_schema_version, digest_version,
+              policy_digest, approved_at, revoked_at)
+           VALUES (?, ?, ?, ?, ?, ?, NULL)`,
+        )
+        .run(
+          receipt.id,
+          receipt.repositoryRoot,
+          receipt.policySchemaVersion,
+          receipt.digestVersion,
+          receipt.policyDigest,
+          receipt.approvedAt,
+        );
+    });
+    approve.immediate();
+    return receipt;
+  }
+
+  public async revokeActiveApprovalReceipt(
+    repositoryRoot: string,
+    revokedAt: string,
+  ): Promise<ApprovalReceipt | null> {
+    this.#assertOpen();
+    const normalizedRoot = normalizeRepositoryRoot(repositoryRoot);
+    if (!isIsoTimestamp(revokedAt)) {
+      throw new TypeError('The revocation timestamp must be an ISO timestamp.');
+    }
+    const revoke = this.#sqlite.transaction((): ApprovalReceipt | null => {
+      const row: unknown = this.#sqlite
+        .prepare(
+          `SELECT id, repository_root, policy_schema_version, digest_version,
+                  policy_digest, approved_at, revoked_at
+           FROM approval_receipts
+           WHERE repository_root = ? AND revoked_at IS NULL LIMIT 1`,
+        )
+        .get(normalizedRoot);
+      if (row === undefined) {
+        const previous: unknown = this.#sqlite
+          .prepare(
+            `SELECT id, repository_root, policy_schema_version, digest_version,
+                    policy_digest, approved_at, revoked_at
+             FROM approval_receipts
+             WHERE repository_root = ?
+             ORDER BY row_id DESC LIMIT 1`,
+          )
+          .get(normalizedRoot);
+        return previous === undefined ? null : mapApprovalReceipt(previous);
+      }
+      const current = mapApprovalReceipt(row);
+      this.#sqlite
+        .prepare('UPDATE approval_receipts SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL')
+        .run(revokedAt, current.id);
+      return { ...current, revokedAt };
+    });
+    return revoke.immediate();
   }
 
   public async saveRun(run: VerificationRun): Promise<VerificationRun> {

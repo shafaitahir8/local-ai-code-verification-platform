@@ -51,8 +51,14 @@ persist a plan, create an approval, or affect PASS/WARN/BLOCK.
 Slice 6B adds an explicit schema-v1 to schema-v2 migration. Preview returns a deterministic target
 YAML and exact diff without writing. Apply requires both reviewed SHA-256 revisions, rejects a
 changed source, and atomically replaces only the policy file. Version 2 preserves named suites and
-adds proposed Quick/Full membership; migration does not approve commands. Approval receipts,
-accepted-policy persistence, smart-plan execution, and AI remain later slices.
+adds proposed Quick/Full membership; migration does not approve commands. Smart-plan execution and
+AI remain later slices.
+
+Slice 6C adds local approval receipts for the current schema-v2 executable policy. The status
+shows the exact suites, commands, and Quick/Full membership bound to a semantic SHA-256 digest.
+An explicit Approve records that digest locally; Revoke removes current authorization. YAML
+formatting or comments do not invalidate approval, but an executable-policy change does. Migration
+never auto-approves. This slice still has no smart-plan execution or AI.
 
 ## Architecture
 
@@ -104,6 +110,9 @@ The first-class commands are:
     verify understand
     verify plan
     verify config migrate
+    verify config approval status
+    verify config approval approve --expected-digest DIGEST
+    verify config approval revoke
     verify inspect
     verify run
     verify run --json
@@ -117,6 +126,7 @@ From the workspace during development, use the root wrapper and pass the target 
     pnpm verify understand C:\path\to\repository
     pnpm verify plan C:\path\to\repository
     pnpm verify config migrate C:\path\to\repository
+    pnpm verify config approval status C:\path\to\repository
     pnpm verify inspect C:\path\to\repository
     pnpm verify run C:\path\to\repository
     pnpm verify history C:\path\to\repository
@@ -133,6 +143,9 @@ The equivalent package command is **pnpm --filter @verify/cli dev COMMAND**. Aft
   result; it runs no check and saves no plan.
 - **verify config migrate** previews the exact schema-v2 policy and YAML diff without writing. Apply
   requires an explicit `--apply` plus the source and target digests printed by that preview.
+- **verify config approval status** shows the validated executable-policy review and local receipt
+  state. **approve** requires its reviewed digest; **revoke** explicitly withdraws approval. These
+  commands do not run the plan or write repository policy.
 - **verify inspect** reports root, branch, changed files, staged/unstaged state, additions, deletions, and status.
 - **verify run** validates configuration, shows and executes configured commands, streams progress, stores the normalized run, and evaluates the gate.
 - **verify run --json** writes stable machine-readable output without human progress text on stdout.
@@ -178,7 +191,9 @@ Only commands explicitly present in validated configuration can run. Review repo
 
 Schema version 1 remains supported unchanged. Explicit migration to version 2 preserves these
 named suites and adds proposed Quick/Full membership plus currently empty reserved policy fields.
-Migration and command approval are separate operations.
+Migration and command approval are separate operations. Approval receipts are stored locally in
+SQLite, not in the repository file. The existing configured `verify run` behavior is unchanged;
+the new Quick/Full plan is not executable yet.
 
 `timeout_ms` is optional and must be a positive integer. Missing `type` values default to the suite
 ID; missing `failure_policy` values default to `warn` for lint suites and `block` otherwise. Run
@@ -205,6 +220,9 @@ deterministic scan that supplies both the project profile and the read-only Quic
 correlated operation, and expandable evidence explains each detection and recommendation.
 Configured version-1 repositories also expose a review-only migration card with the exact YAML diff;
 opening a repository never applies migration automatically.
+For schema-v2 policy, a separate approval card shows the exact executable commands and plan
+membership associated with its current digest, plus Not approved, Approved, or Approval outdated
+state. Approve and Revoke require explicit actions; neither runs a command.
 
 Run the browser UI with **pnpm --filter @verify/desktop dev**. With Rust and the platform-specific Tauri prerequisites installed, run the native application with **pnpm --filter @verify/desktop tauri dev** and build it with **pnpm --filter @verify/desktop desktop:build**.
 

@@ -16,6 +16,9 @@ project discovery, and deterministic verification-suite suggestions.
   `loadProjectConfig` remains strictly version 1.
 - Preview a deterministic version-1-to-version-2 YAML migration with raw-source and target SHA-256
   digests, an exact diff, and a summary; apply it only with both reviewed digests.
+- Compute the versioned semantic executable-policy digest of a validated schema-v2 policy. The
+  digest excludes presentation-only YAML bytes but includes every currently supported executable
+  suite and plan decision.
 
 ## Allowed dependencies
 
@@ -44,6 +47,9 @@ The schema and defaults for `.verify/project.yml`, discovery records, and initia
 - Migration never occurs on read or preview. Apply rejects a changed raw source or target digest,
   refuses symbolic paths, and replaces via a synced temporary file in the same directory.
 - Migration acceptance is not local approval to run a proposed plan or launch target.
+- A formatting/comment or project display-name change does not change the executable digest;
+  commands, suite type, failure policy, timeout, and ordered plan membership do. Reserved
+  launch-target and override fields are empty-only until a versioned future extension.
 
 ## Security and privacy
 
@@ -66,3 +72,4 @@ version-2 policy fields are not interpreted as command approval or executable sm
 Tests cover valid and invalid YAML, defaults, round trips, discovery evidence, overwrite behavior,
 missing files, symbolic-path rejection, exact migration diffs, no-write preview, stale edits,
 version-2 strictness, and explicit atomic replacement.
+Digest tests cover semantic stability and execution-relevant invalidation.
