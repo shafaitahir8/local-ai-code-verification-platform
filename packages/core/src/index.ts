@@ -1,8 +1,10 @@
 export {
+  type ApplyProjectConfigMigrationRequest,
   type ConfigurationState,
   type InitializeProjectRequest,
   type ProfileProjectRequest,
   type PreviewVerificationPlansRequest,
+  type ProjectPolicyState,
   type RunVerificationRequest,
   VerifierApplication,
   type VerifierApplicationDependencies,

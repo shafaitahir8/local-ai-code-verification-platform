@@ -1,10 +1,16 @@
 import { parseDocument, stringify } from 'yaml';
 
 import { ConfigValidationError } from './errors.js';
-import { PROJECT_CONFIG_VERSION, type ProjectConfigV1 } from './types.js';
-import { validateProjectConfig } from './validation.js';
+import {
+  PROJECT_CONFIG_VERSION,
+  PROJECT_POLICY_VERSION,
+  type ProjectConfigV1,
+  type ProjectConfigV2,
+  type ProjectPolicy,
+} from './types.js';
+import { validateProjectConfig, validateProjectConfigV2 } from './validation.js';
 
-export function parseProjectConfig(source: string): ProjectConfigV1 {
+function parseProjectYaml(source: string): unknown {
   const document = parseDocument(source, {
     prettyErrors: false,
     strict: true,
@@ -32,6 +38,28 @@ export function parseProjectConfig(source: string): ProjectConfigV1 {
     ]);
   }
 
+  return parsed;
+}
+
+export function parseProjectConfig(source: string): ProjectConfigV1 {
+  return validateProjectConfig(parseProjectYaml(source));
+}
+
+export function parseProjectConfigV2(source: string): ProjectConfigV2 {
+  return validateProjectConfigV2(parseProjectYaml(source));
+}
+
+export function parseProjectPolicy(source: string): ProjectPolicy {
+  const parsed = parseProjectYaml(source);
+  if (
+    typeof parsed === 'object' &&
+    parsed !== null &&
+    !Array.isArray(parsed) &&
+    'version' in parsed &&
+    parsed.version === PROJECT_POLICY_VERSION
+  ) {
+    return validateProjectConfigV2(parsed);
+  }
   return validateProjectConfig(parsed);
 }
 

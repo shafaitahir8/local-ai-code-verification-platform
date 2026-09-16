@@ -9,9 +9,10 @@ import {
   type InitializeProjectConfigResult,
   type ProjectConfigPreview,
   type ProjectConfigV1,
+  type ProjectPolicy,
 } from './types.js';
 import { validateProjectConfig } from './validation.js';
-import { parseProjectConfig, serializeProjectConfig } from './yaml.js';
+import { parseProjectConfig, parseProjectPolicy, serializeProjectConfig } from './yaml.js';
 
 function isErrno(error: unknown, code: string): boolean {
   return (
@@ -49,6 +50,19 @@ export async function loadProjectConfig(repositoryRoot: string): Promise<Project
   const path = getProjectConfigPath(repositoryRoot);
   try {
     return parseProjectConfig(await readFile(path, 'utf8'));
+  } catch (error) {
+    if (isErrno(error, 'ENOENT')) {
+      throw new ConfigNotFoundError(path);
+    }
+    throw error;
+  }
+}
+
+/** Additive version-aware inspection; the historical v1 loader remains strict. */
+export async function loadProjectPolicy(repositoryRoot: string): Promise<ProjectPolicy> {
+  const path = getProjectConfigPath(repositoryRoot);
+  try {
+    return parseProjectPolicy(await readFile(path, 'utf8'));
   } catch (error) {
     if (isErrno(error, 'ENOENT')) {
       throw new ConfigNotFoundError(path);

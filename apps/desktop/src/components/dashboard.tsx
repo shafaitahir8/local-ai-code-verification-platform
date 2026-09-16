@@ -1,6 +1,7 @@
 import type { DashboardController } from '../dashboard/use-dashboard.js';
 import { ChangePanel } from './change-panel.js';
 import { ChecksPanel } from './checks-panel.js';
+import { ConfigMigrationCard } from './config-migration.js';
 import { GateHero } from './gate-hero.js';
 import { HistoryPanel } from './history-panel.js';
 import { ProjectOverview } from './project-overview.js';
@@ -40,6 +41,16 @@ export function Dashboard({ controller }: { readonly controller: DashboardContro
         <VerificationPlanPreviewCard
           preview={controller.planPreview}
           profilePhase={controller.profilePhase}
+        />
+      </div>
+      <div className="dashboard-grid__wide">
+        <ConfigMigrationCard
+          policy={config}
+          preview={controller.migrationPreview}
+          phase={controller.migrationPhase}
+          error={controller.migrationError}
+          onPreview={() => void controller.previewMigration()}
+          onApply={() => void controller.applyMigration()}
         />
       </div>
       <ChangePanel inspection={inspection} />

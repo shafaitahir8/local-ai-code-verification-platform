@@ -3,6 +3,7 @@ import { createInterface } from 'node:readline';
 import { NoVerificationRunError, type VerifierApplication } from '@verify/core';
 import {
   ConfigAlreadyExistsError,
+  ConfigMigrationStaleError,
   ConfigNotFoundError,
   ConfigUnsafePathError,
   ConfigValidationError,
@@ -267,6 +268,43 @@ export async function handleProtocolRequest(
         );
         return;
       }
+      case 'config.policy.get': {
+        const result = await application.getProjectPolicy(request.params.repository);
+        writer.write(
+          encodeResult('config.policy.get', {
+            protocolVersion: PROTOCOL_VERSION,
+            id: request.id,
+            result: protocolResultSchemas['config.policy.get'].parse(result),
+          }),
+        );
+        return;
+      }
+      case 'config.migrate.preview': {
+        const result = await application.previewProjectConfigMigration(request.params.repository);
+        writer.write(
+          encodeResult('config.migrate.preview', {
+            protocolVersion: PROTOCOL_VERSION,
+            id: request.id,
+            result,
+          }),
+        );
+        return;
+      }
+      case 'config.migrate.apply': {
+        const result = await application.applyProjectConfigMigration({
+          repository: request.params.repository,
+          expectedSourceDigest: request.params.expectedSourceDigest,
+          expectedTargetDigest: request.params.expectedTargetDigest,
+        });
+        writer.write(
+          encodeResult('config.migrate.apply', {
+            protocolVersion: PROTOCOL_VERSION,
+            id: request.id,
+            result: protocolResultSchemas['config.migrate.apply'].parse(result),
+          }),
+        );
+        return;
+      }
       case 'repository.inspect': {
         const result = await application.inspectRepository(request.params.repository);
         writer.write(
@@ -409,6 +447,7 @@ export async function handleProtocolRequest(
 }
 
 function classifyError(error: unknown): ProtocolErrorCode {
+  if (error instanceof ConfigMigrationStaleError) return 'MIGRATION_STALE';
   if (
     error instanceof ConfigValidationError ||
     error instanceof ConfigNotFoundError ||

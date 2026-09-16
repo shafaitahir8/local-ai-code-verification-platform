@@ -10,6 +10,7 @@ import {
   formatGate,
   formatInspection,
   formatProjectProfile,
+  formatProjectConfigMigrationPreview,
   formatRun,
   formatVerificationPlanPreview,
 } from './format.js';
@@ -120,6 +121,54 @@ export function createProgram(context: CliContext): Command {
         for (const warning of discovery.warnings) io.writeError(line(`Warning: ${warning}`));
       }
     });
+
+  const config = program.command('config').description('Review project verification policy');
+  config
+    .command('migrate')
+    .description('Preview or explicitly apply the schema-v1 to schema-v2 policy migration')
+    .argument('[repository]', 'path inside the Git repository', '.')
+    .option('--apply', 'apply a previously reviewed migration')
+    .option('--expected-digest <digest>', 'SHA-256 digest of the reviewed source policy')
+    .option('--expected-target-digest <digest>', 'SHA-256 digest of the reviewed target policy')
+    .option('--json', 'emit the protocol-equivalent migration result as JSON')
+    .action(
+      async (
+        repository: string,
+        options: JsonOption & {
+          apply?: boolean;
+          expectedDigest?: string;
+          expectedTargetDigest?: string;
+        },
+      ) => {
+        if (options.apply === true) {
+          if (options.expectedDigest === undefined || options.expectedTargetDigest === undefined) {
+            throw new Error(
+              'Applying a migration requires --expected-digest and --expected-target-digest from a reviewed preview.',
+            );
+          }
+          const result = await application.applyProjectConfigMigration({
+            repository,
+            expectedSourceDigest: options.expectedDigest,
+            expectedTargetDigest: options.expectedTargetDigest,
+          });
+          if (options.json === true) writeJson(io, result);
+          else {
+            io.writeOut(line(`Migrated ${result.path} to schema version ${result.version}.`));
+            io.writeOut(
+              line('Migration does not approve commands or enable smart-plan execution.'),
+            );
+          }
+          return;
+        }
+
+        if (options.expectedDigest !== undefined || options.expectedTargetDigest !== undefined) {
+          throw new Error('Digest options require --apply; preview never writes configuration.');
+        }
+        const preview = await application.previewProjectConfigMigration(repository);
+        if (options.json === true) writeJson(io, preview);
+        else io.writeOut(line(formatProjectConfigMigrationPreview(preview)));
+      },
+    );
 
   program
     .command('understand')

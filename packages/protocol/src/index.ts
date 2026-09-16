@@ -57,6 +57,10 @@ export type {
 } from './messages.js';
 export {
   projectConfigSchema,
+  projectConfigV2Schema,
+  projectPolicyResultSchema,
+  projectConfigMigrationPreviewSchema,
+  projectConfigMigrationApplySchema,
   projectDiscoveryResultSchema,
   PROTOCOL_VERSION,
   protocolParamsSchemas,
@@ -64,6 +68,7 @@ export {
 } from './methods.js';
 export type {
   ProjectConfigMessage,
+  ProjectConfigV2Message,
   ProjectDiscoveryResult,
   ProtocolMethod,
   ProtocolParamsMap,

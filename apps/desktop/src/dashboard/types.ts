@@ -14,7 +14,9 @@ export type ProjectProfileProgress = Extract<
   ProtocolEventMessage,
   { event: 'profile.progress' }
 >['data'];
-export type ConfigResult = ProtocolResultMap['config.get'];
+export type ConfigResult = ProtocolResultMap['config.policy.get'];
+export type MigrationPreview = ProtocolResultMap['config.migrate.preview'];
+export type MigrationApplyResult = ProtocolResultMap['config.migrate.apply'];
 export type InspectionResult = ProtocolResultMap['repository.inspect'];
 export type VerificationRun = ProtocolResultMap['verification.run'];
 export type LatestGateResult = ProtocolResultMap['gate.latest'];
@@ -34,3 +36,5 @@ export interface LiveCheck {
 export type LoadPhase = 'empty' | 'loading' | 'ready' | 'error';
 export type RunPhase = 'idle' | 'running' | 'cancelling' | 'completed' | 'error';
 export type ProfilePhase = 'idle' | 'running' | 'cancelling' | 'completed' | 'cancelled' | 'error';
+export type MigrationPhase =
+  'idle' | 'previewing' | 'ready' | 'applying' | 'applied' | 'stale' | 'error';

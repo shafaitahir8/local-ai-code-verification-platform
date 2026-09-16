@@ -44,3 +44,19 @@ export class ConfigUnsafePathError extends Error {
     this.name = 'ConfigUnsafePathError';
   }
 }
+
+export class ConfigMigrationStaleError extends Error {
+  public readonly code = 'MIGRATION_STALE';
+
+  public constructor(
+    public readonly path: string,
+    public readonly digestKind: 'source' | 'target',
+  ) {
+    super(
+      digestKind === 'source'
+        ? `Migration preview is stale because ${path} changed. Preview the migration again.`
+        : 'Migration preview target changed. Preview the migration again.',
+    );
+    this.name = 'ConfigMigrationStaleError';
+  }
+}

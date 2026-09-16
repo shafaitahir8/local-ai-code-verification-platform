@@ -17,6 +17,10 @@ Iteration 6 slice 6A also previews deterministic Quick and Full verification rec
 complete, unambiguous, single-root Node/Vite/Vitest profile. These recommendations are read-only:
 previewing never runs a check, approves a command, or saves configuration or history.
 
+Slice 6B adds an explicit schema-v1 to schema-v2 policy migration. The application first shows the
+complete proposed YAML and exact diff. It writes only after an explicit Apply action using the
+reviewed revisions; migration remains separate from command approval.
+
 ## Features
 
 - Opens a local Git repository and summarizes its branch and changed files.
@@ -24,7 +28,8 @@ previewing never runs a check, approves a command, or saves configuration or his
   metadata and shows confidence, ambiguities, warnings, and supporting file evidence.
 - Previews selected and skipped checks in distinct Quick and Full plans for the supported
   Node/Vite/Vitest slice, with a reason and source evidence for each included check.
-- Suggests checks from project metadata and stores approved commands in `.verify/project.yml`.
+- Suggests checks from project metadata and stores explicitly configured commands in
+  `.verify/project.yml`.
 - Runs configured test, lint, typecheck, build, and other generic commands with live output.
 - Applies deterministic block-or-warn policy to normalized results.
 - Persists recent run history in a local SQLite database.
@@ -48,8 +53,8 @@ frameworks, test commands, or run commands are shown as ambiguities; none is sel
 A plain static-site detection exposes a preview capability only; it does not start a preview server
 or invent a command. Profiling never executes a command, changes `.verify/project.yml`, writes source
 files, or creates run-history records. A profile can be complete, partial because a scan budget was
-reached, or cancelled by the user. These states are shown separately. No AI or schema-version-2
-behavior is involved. Planning is available only as a read-only preview for the first supported
+reached, or cancelled by the user. These states are shown separately. Profiling does not invoke AI
+or migrate configuration. Planning is available only as a read-only preview for the first supported
 Node/Vite/Vitest slice; it does not make discovered commands executable.
 
 ## Before you begin
@@ -77,13 +82,18 @@ running checks from a repository you do not trust.
 5. Review **Verification Plan**. Quick selects eligible test and lint checks; Full also selects
    eligible typecheck and build checks. Expand technical evidence to see why each observed check was
    selected or skipped. This preview has no Run, Apply, Approve, or Save action.
-6. Review the Git summary and the configured or suggested checks.
-7. If the repository has no configuration, review every suggested command and choose **Initialize
+6. If a configured repository is still at version 1, choose **Review Migration** to inspect a
+   version-2 policy proposal. Read its summary and exact YAML diff before choosing **Apply
+   Migration**. Opening a repository or reviewing the preview never rewrites the file. If someone
+   edits the source after preview, apply reports a conflict and leaves their edit intact; refresh
+   the preview first. Applying migration does not approve or run any command.
+7. Review the Git summary and the configured or suggested checks.
+8. If the repository has no configuration, review every suggested command and choose **Initialize
    project**. This creates `.verify/project.yml` without overwriting an existing file.
-8. Edit `.verify/project.yml` in your editor if a command, timeout, or failure policy needs to change,
+9. Edit `.verify/project.yml` in your editor if a command, timeout, or failure policy needs to change,
    then choose **Inspect again**.
-9. Choose **Run verification**. The dashboard shows live output and each completed check.
-10. Read the final gate and its reasons. Select an item under **Recent runs** to reopen persisted
+10. Choose **Run verification**. The dashboard shows live output and each completed check.
+11. Read the final gate and its reasons. Select an item under **Recent runs** to reopen persisted
     evidence, or choose **Return to latest** to leave history view.
 
 Choose **Stop run** to cancel active verification. The application waits for the engine to stop the
@@ -125,6 +135,11 @@ suites:
 Only commands explicitly listed in this file are executed. `failure_policy: block` makes a failed
 check BLOCK the run; `failure_policy: warn` makes it WARN when no blocking check fails.
 
+Version 2 keeps those named suites and adds proposed Quick/Full suite membership. The migration
+preview shows the exact change before an explicit apply. Migration is a policy-format change, not
+local approval for future smart actions; the existing **Run verification** path still uses the
+named suites rather than automatically executing the proposed plans.
+
 ## Use the CLI from a development checkout
 
 Install the workspace prerequisites, then run commands from the project root:
@@ -133,6 +148,7 @@ Install the workspace prerequisites, then run commands from the project root:
 pnpm install
 pnpm verify understand "C:\path\to\repository"
 pnpm verify plan "C:\path\to\repository"
+pnpm verify config migrate "C:\path\to\repository"
 pnpm verify inspect "C:\path\to\repository"
 pnpm verify run "C:\path\to\repository"
 pnpm verify gate "C:\path\to\repository"
@@ -143,6 +159,14 @@ Use `pnpm verify init "C:\path\to\repository"` to create configuration after rev
 commands. `pnpm verify understand` performs the same read-only profiling exposed by the desktop;
 `pnpm verify plan` shows the same Quick and Full preview. Add `--json` to either command for its
 typed protocol-equivalent result, or to other supported commands for stable machine-readable output.
+`pnpm verify config migrate` previews only. To accept that exact preview, use its printed source
+and target digests:
+
+```powershell
+pnpm verify config migrate "C:\path\to\repository" --apply --expected-digest SOURCE_SHA256 --expected-target-digest TARGET_SHA256
+```
+
+A changed source or target revision is rejected rather than overwritten.
 
 ## Local data
 
@@ -154,6 +178,8 @@ not encrypted by v0.1.0.
 Project profiles and plan previews are not persisted. Running only **Understand Project** or
 `verify plan` does not initialize or write the history database, repository files, or
 `.verify/project.yml`.
+Reviewing a configuration migration also writes nothing. Explicit apply replaces only the YAML
+policy; it does not initialize the history database or approve commands.
 
 ## Troubleshooting
 

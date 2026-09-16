@@ -15,6 +15,7 @@ const repositoryParamsSchema = z.strictObject({
 });
 
 const requestIdSchema = z.string().min(1).max(256);
+const configDigestSchema = z.string().regex(/^[a-f0-9]{64}$/u);
 
 const failurePolicySchema = z.enum(['block', 'warn']);
 
@@ -29,6 +30,45 @@ export const projectConfigSchema = z.strictObject({
   version: z.literal(1),
   project: z.strictObject({ name: z.string().min(1) }),
   suites: z.record(z.string().min(1), suiteConfigSchema),
+});
+
+export const projectConfigV2Schema = z.strictObject({
+  version: z.literal(2),
+  project: z.strictObject({ name: z.string().min(1) }),
+  suites: z.record(z.string().min(1), suiteConfigSchema),
+  plans: z.strictObject({
+    quick: z.strictObject({ suites: z.array(z.string().min(1)) }),
+    full: z.strictObject({ suites: z.array(z.string().min(1)) }),
+  }),
+  launch_targets: z.strictObject({}),
+  discovery: z.strictObject({ exclusions: z.array(z.never()) }),
+  overrides: z.strictObject({}),
+});
+
+export const projectPolicyResultSchema = z.strictObject({
+  repositoryRoot: z.string().min(1),
+  path: z.string().min(1),
+  exists: z.boolean(),
+  config: z.union([projectConfigSchema, projectConfigV2Schema]).optional(),
+});
+
+export const projectConfigMigrationPreviewSchema = z.strictObject({
+  path: z.string().min(1),
+  sourceVersion: z.literal(1),
+  targetVersion: z.literal(2),
+  sourceDigest: configDigestSchema,
+  targetDigest: configDigestSchema,
+  targetYaml: z.string().min(1),
+  diff: z.string().min(1),
+  summary: z.string().min(1),
+});
+
+export const projectConfigMigrationApplySchema = z.strictObject({
+  path: z.string().min(1),
+  version: z.literal(2),
+  sourceDigest: configDigestSchema,
+  targetDigest: configDigestSchema,
+  config: projectConfigV2Schema,
 });
 
 export const projectDiscoveryResultSchema = z.strictObject({
@@ -59,6 +99,12 @@ export const protocolParamsSchemas = {
   'verification.plan': repositoryParamsSchema,
   'config.get': repositoryParamsSchema,
   'config.init': repositoryParamsSchema.extend({ force: z.boolean().optional() }),
+  'config.policy.get': repositoryParamsSchema,
+  'config.migrate.preview': repositoryParamsSchema,
+  'config.migrate.apply': repositoryParamsSchema.extend({
+    expectedSourceDigest: configDigestSchema,
+    expectedTargetDigest: configDigestSchema,
+  }),
   'repository.inspect': repositoryParamsSchema,
   'verification.run': repositoryParamsSchema,
   'verification.cancel': z.strictObject({ targetRequestId: requestIdSchema }),
@@ -84,6 +130,9 @@ export const protocolResultSchemas = {
     discovery: projectDiscoveryResultSchema.optional(),
     overwritten: z.boolean(),
   }),
+  'config.policy.get': projectPolicyResultSchema,
+  'config.migrate.preview': projectConfigMigrationPreviewSchema,
+  'config.migrate.apply': projectConfigMigrationApplySchema,
   'repository.inspect': repositoryChangeSchema,
   'verification.run': verificationRunSchema,
   'verification.cancel': z.strictObject({ accepted: z.boolean() }),
@@ -108,5 +157,6 @@ export type ProtocolResultMap = {
 };
 
 export type ProjectConfigMessage = z.infer<typeof projectConfigSchema>;
+export type ProjectConfigV2Message = z.infer<typeof projectConfigV2Schema>;
 export type ProjectDiscoveryResult = z.infer<typeof projectDiscoveryResultSchema>;
 export type RepositoryInspectionResult = z.infer<typeof repositoryChangeSchema>;

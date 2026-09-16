@@ -15,6 +15,8 @@ evaluates a gate, or persists results.
   state.
 - Review deterministic Quick and Full verification-plan previews with a selected/skipped reason and
   source evidence for every observed check. Previewing never executes a check or persists a plan.
+- Review an exact schema-v1 to schema-v2 YAML migration diff and explicitly choose Apply Migration;
+  a changed source revision is reported as a conflict rather than overwritten.
 - Review branch, changed files, configured checks, current gate, live progress, and run history.
 - Initialize `.verify/project.yml`, run verification, interrupt an active request, and open the
   repository with keyboard-accessible controls.
@@ -43,6 +45,12 @@ with normalized Quick and Full previews; both operations stream `profile.progres
 existing `verification.cancel` contract remains supported. The bridge validates the terminal result
 according to the target method: profiling or planning cancellation does not require or create a
 persisted verification run.
+
+Configuration migration uses additive `config.policy.get`, `config.migrate.preview`, and
+`config.migrate.apply` methods. The strict-v1 `config.get` result remains unchanged. Opening a
+repository reads policy but never previews or applies a migration automatically. Preview is
+read-only; Apply sends the reviewed source and target digests, then refreshes the version-aware
+policy view. Applying YAML does not approve or execute commands.
 
 `pnpm --filter @verify/desktop dev` runs a browser-only visual preview with deterministic mock data;
 query parameters `?scenario=WARN`, `?scenario=BLOCK`, and `?uninitialized=1` exercise major states.
@@ -77,6 +85,8 @@ previews are not persisted.
   profile-only path writes no repository, configuration, or SQLite state.
 - Plan previews are deterministic projections of the returned profile. They never execute an
   observed command, write configuration, create an approval, or affect PASS/WARN/BLOCK.
+- Migration UI does not calculate target YAML or a diff; it displays the engine preview, applies
+  only its reviewed digests, and ignores old results after another repository is selected.
 - Graceful cancellation uses `operation.cancel` for project profiling and planning and retains the
   last completed matching profile/plan pair. Verification continues to use `verification.cancel`
   and first requests a persisted cancelled run; an unresponsive engine is terminated after a
@@ -124,6 +134,10 @@ protocol client with CLI JSON output from the same headless engine. Native Rust,
 sidecar, installer, outside-checkout workflow, Node-independence, persistence, and process-cleanup
 results must be recorded separately because browser tests cannot prove them.
 
+Migration tests cover version-aware reopening, an exact read-only preview, deliberate apply,
+stale-source conflicts, and repository-switch guards. Browser tests do not prove the engine's
+atomic replacement; configuration integration tests own that guarantee.
+
 The implemented Iteration 5 surface covers Node projects using Vite, Vitest, or Jest; Python
 packaging and pytest evidence; declared npm/pnpm/Yarn workspaces; mixed Node/Python repositories;
 and detection of a plain static site when a complete inventory finds a root `index.html` without
@@ -132,5 +146,6 @@ a preview capability: the desktop does not start a preview server or execute a c
 units and multi-target ambiguities are displayed without a selected default. The same profile
 contract and rendering path carry these findings, and profiling writes no repository,
 configuration, or database state. The first Iteration 6 slice adds deterministic plan preview only
-for a complete, unambiguous, single-root Node/Vite/Vitest profile. Plan execution and persistence,
-schema-v2 behavior, approval receipts, AI, and smart command execution remain intentionally absent.
+for a complete, unambiguous, single-root Node/Vite/Vitest profile. Slice 6B adds only reviewable
+schema-v2 policy migration. Plan execution and persistence, approval receipts, AI, and smart
+command execution remain intentionally absent.

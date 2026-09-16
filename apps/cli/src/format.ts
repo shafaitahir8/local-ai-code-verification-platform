@@ -8,6 +8,30 @@ import type {
   VerificationPlanPreview,
   VerificationRun,
 } from '@verify/domain';
+import type { ProtocolResultMap } from '@verify/protocol';
+
+export function formatProjectConfigMigrationPreview(
+  preview: ProtocolResultMap['config.migrate.preview'],
+): string {
+  return [
+    'Project Policy Migration Preview (read-only)',
+    `Path: ${preview.path}`,
+    `Current version: ${preview.sourceVersion}`,
+    `Target version: ${preview.targetVersion}`,
+    `Summary: ${preview.summary}`,
+    `Source digest: ${preview.sourceDigest}`,
+    `Target digest: ${preview.targetDigest}`,
+    '',
+    'Exact YAML diff:',
+    preview.diff,
+    '',
+    'Proposed YAML:',
+    preview.targetYaml,
+    '',
+    'To apply this reviewed migration, run verify config migrate --apply with both digests above.',
+    'Applying migration does not approve commands.',
+  ].join('\n');
+}
 
 function formatPlanDecision(decision: VerificationPlanCheckDecision): string[] {
   const lines = [

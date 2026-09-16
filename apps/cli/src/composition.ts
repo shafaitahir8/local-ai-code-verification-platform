@@ -1,9 +1,12 @@
 import {
   discoverProject,
+  applyProjectConfigMigration,
   getProjectConfigPath,
   initializeProjectConfig,
   loadProjectConfig,
+  loadProjectPolicy,
   previewProjectConfig,
+  previewProjectConfigMigration,
   projectConfigExists,
 } from '@verify/config';
 import {
@@ -70,7 +73,10 @@ export function createApplicationComposition(
     configuration: {
       exists: projectConfigExists,
       load: loadProjectConfig,
+      loadPolicy: loadProjectPolicy,
       preview: previewProjectConfig,
+      migrationPreview: previewProjectConfigMigration,
+      migrationApply: applyProjectConfigMigration,
       discover: discoverProject,
       initialize: initializeProjectConfig,
       path: getProjectConfigPath,

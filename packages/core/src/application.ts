@@ -1,8 +1,11 @@
 import { randomUUID } from 'node:crypto';
 
 import type {
+  ConfigMigrationApplyResult,
+  ConfigMigrationPreview,
   InitializeProjectConfigResult,
   ProjectConfigV1,
+  ProjectConfigV2,
   ProjectDiscovery,
 } from '@verify/config';
 import { toVerificationSuites } from '@verify/config';
@@ -42,6 +45,19 @@ export interface ConfigurationState {
   readonly path: string;
   readonly exists: boolean;
   readonly config?: ProjectConfigV1;
+}
+
+export interface ProjectPolicyState {
+  readonly repositoryRoot: string;
+  readonly path: string;
+  readonly exists: boolean;
+  readonly config?: ProjectConfigV1 | ProjectConfigV2;
+}
+
+export interface ApplyProjectConfigMigrationRequest {
+  readonly repository: string;
+  readonly expectedSourceDigest: string;
+  readonly expectedTargetDigest: string;
 }
 
 export interface InitializeProjectRequest {
@@ -118,6 +134,33 @@ export class VerifierApplication {
     };
   }
 
+  public async getProjectPolicy(repository: string): Promise<ProjectPolicyState> {
+    const repositoryRoot = await this.#repository.resolveRoot(repository);
+    const exists = await this.#configuration.exists(repositoryRoot);
+    return {
+      repositoryRoot,
+      path: this.#configuration.path(repositoryRoot),
+      exists,
+      ...(exists ? { config: await this.#configuration.loadPolicy(repositoryRoot) } : {}),
+    };
+  }
+
+  public async previewProjectConfigMigration(repository: string): Promise<ConfigMigrationPreview> {
+    const repositoryRoot = await this.#repository.resolveRoot(repository);
+    return this.#configuration.migrationPreview(repositoryRoot);
+  }
+
+  public async applyProjectConfigMigration(
+    request: ApplyProjectConfigMigrationRequest,
+  ): Promise<ConfigMigrationApplyResult> {
+    const repositoryRoot = await this.#repository.resolveRoot(request.repository);
+    return this.#configuration.migrationApply({
+      repositoryRoot,
+      expectedSourceDigest: request.expectedSourceDigest,
+      expectedTargetDigest: request.expectedTargetDigest,
+    });
+  }
+
   public async initializeProject(
     request: InitializeProjectRequest,
   ): Promise<InitializeProjectConfigResult> {
@@ -139,7 +182,7 @@ export class VerifierApplication {
 
   public async runVerification(request: RunVerificationRequest): Promise<VerificationRun> {
     const repositoryRoot = await this.#repository.resolveRoot(request.repository);
-    const config = await this.#configuration.load(repositoryRoot);
+    const config = await this.#configuration.loadPolicy(repositoryRoot);
     const runId = this.#createRunId();
     const evidence = await this.#verification.run({
       checks: toVerificationSuites(config),

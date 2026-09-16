@@ -8,6 +8,8 @@ import type {
   LatestGateResult,
   LiveCheck,
   LoadPhase,
+  MigrationPhase,
+  MigrationPreview,
   ProfilePhase,
   ProjectProfile,
   ProjectProfileProgress,
@@ -37,6 +39,9 @@ export interface DashboardController {
   readonly profileProgress?: ProjectProfileProgress;
   readonly profileError?: string;
   readonly config?: ConfigResult;
+  readonly migrationPreview?: MigrationPreview;
+  readonly migrationPhase: MigrationPhase;
+  readonly migrationError?: string;
   readonly inspection?: InspectionResult;
   readonly latestGate?: LatestGateResult;
   readonly history: RunsResult['runs'];
@@ -51,6 +56,8 @@ export interface DashboardController {
   readonly understandProject: () => Promise<void>;
   readonly stopProjectProfile: () => void;
   readonly initializeProject: () => Promise<void>;
+  readonly previewMigration: () => Promise<void>;
+  readonly applyMigration: () => Promise<void>;
   readonly runVerification: () => Promise<void>;
   readonly stopVerification: () => void;
   readonly selectHistoryRun: (runId?: string) => void;
@@ -69,6 +76,9 @@ export function useDashboard(
   const [profileProgress, setProfileProgress] = useState<ProjectProfileProgress>();
   const [profileError, setProfileError] = useState<string>();
   const [config, setConfig] = useState<ConfigResult>();
+  const [migrationPreview, setMigrationPreview] = useState<MigrationPreview>();
+  const [migrationPhase, setMigrationPhase] = useState<MigrationPhase>('idle');
+  const [migrationError, setMigrationError] = useState<string>();
   const [inspection, setInspection] = useState<InspectionResult>();
   const [latestGate, setLatestGate] = useState<LatestGateResult>();
   const [history, setHistory] = useState<RunsResult['runs']>([]);
@@ -79,6 +89,7 @@ export function useDashboard(
   const [liveAnnouncement, setLiveAnnouncement] = useState('');
   const [error, setError] = useState<string>();
   const loadGeneration = useRef(0);
+  const migrationGeneration = useRef(0);
   const runController = useRef<AbortController | undefined>(undefined);
   const profileController = useRef<AbortController | undefined>(undefined);
   const currentRepository = useRef('');
@@ -166,6 +177,7 @@ export function useDashboard(
 
       const generation = loadGeneration.current + 1;
       loadGeneration.current = generation;
+      migrationGeneration.current += 1;
       runController.current?.abort();
       profileController.current?.abort();
       const repositoryChanged = currentRepository.current !== selectedRepository;
@@ -174,6 +186,10 @@ export function useDashboard(
         setPlanPreview(undefined);
       }
       setRepository(selectedRepository);
+      setConfig(undefined);
+      setMigrationPreview(undefined);
+      setMigrationPhase('idle');
+      setMigrationError(undefined);
       setLoadPhase('loading');
       setRunPhase('idle');
       setProfilePhase('idle');
@@ -190,7 +206,7 @@ export function useDashboard(
         const [nextDiscovery, nextConfig, nextInspection, nextGate, nextHistory] =
           await Promise.all([
             client.request('project.discover', { repository: selectedRepository }),
-            client.request('config.get', { repository: selectedRepository }),
+            client.request('config.policy.get', { repository: selectedRepository }),
             client.request('repository.inspect', { repository: selectedRepository }),
             client.request('gate.latest', { repository: selectedRepository }),
             client.request('runs.list', { repository: selectedRepository, limit: 10 }),
@@ -263,7 +279,10 @@ export function useDashboard(
     setLiveAnnouncement('Initializing project configuration.');
     try {
       const initialized = await client.request('config.init', { repository });
-      setConfig({ exists: true, path: initialized.path, config: initialized.config });
+      const nextPolicy = await client.request('config.policy.get', { repository });
+      setConfig(nextPolicy);
+      setMigrationPreview(undefined);
+      setMigrationPhase('idle');
       setLiveAnnouncement(
         initialized.overwritten
           ? 'Project configuration replaced.'
@@ -274,6 +293,122 @@ export function useDashboard(
       setLiveAnnouncement('Project initialization failed.');
     }
   }, [client, repository]);
+
+  const previewMigration = useCallback(async () => {
+    if (!repository || config?.config?.version !== 1) {
+      return;
+    }
+
+    const selectedRepository = repository;
+    const repositoryGeneration = loadGeneration.current;
+    const operationGeneration = migrationGeneration.current + 1;
+    migrationGeneration.current = operationGeneration;
+    setMigrationPreview(undefined);
+    setMigrationPhase('previewing');
+    setMigrationError(undefined);
+    setLiveAnnouncement('Preparing a reviewable configuration migration preview.');
+
+    try {
+      const preview = await client.request('config.migrate.preview', {
+        repository: selectedRepository,
+      });
+      if (
+        repositoryGeneration !== loadGeneration.current ||
+        operationGeneration !== migrationGeneration.current
+      ) {
+        return;
+      }
+      setMigrationPreview(preview);
+      setMigrationPhase('ready');
+      setLiveAnnouncement('Migration preview is ready. Nothing has been changed.');
+    } catch (migrationRequestError) {
+      if (
+        repositoryGeneration !== loadGeneration.current ||
+        operationGeneration !== migrationGeneration.current
+      ) {
+        return;
+      }
+      setMigrationPhase('error');
+      setMigrationError(errorMessage(migrationRequestError));
+      setLiveAnnouncement('Migration preview failed. Project configuration is unchanged.');
+    }
+  }, [client, config?.config?.version, repository]);
+
+  const applyMigration = useCallback(async () => {
+    if (!repository || !migrationPreview || config?.config?.version !== 1) {
+      return;
+    }
+
+    const selectedRepository = repository;
+    const reviewedPreview = migrationPreview;
+    const repositoryGeneration = loadGeneration.current;
+    const operationGeneration = migrationGeneration.current + 1;
+    migrationGeneration.current = operationGeneration;
+    setMigrationPhase('applying');
+    setMigrationError(undefined);
+    setLiveAnnouncement('Applying the reviewed migration after checking the source revision.');
+
+    try {
+      await client.request('config.migrate.apply', {
+        repository: selectedRepository,
+        expectedSourceDigest: reviewedPreview.sourceDigest,
+        expectedTargetDigest: reviewedPreview.targetDigest,
+      });
+      if (
+        repositoryGeneration !== loadGeneration.current ||
+        operationGeneration !== migrationGeneration.current
+      ) {
+        return;
+      }
+      setMigrationPreview(undefined);
+      setMigrationPhase('applied');
+      setLiveAnnouncement('Configuration migration applied. Commands were not approved or run.');
+
+      try {
+        const nextPolicy = await client.request('config.policy.get', {
+          repository: selectedRepository,
+        });
+        if (
+          repositoryGeneration !== loadGeneration.current ||
+          operationGeneration !== migrationGeneration.current
+        ) {
+          return;
+        }
+        setConfig(nextPolicy);
+      } catch (refreshError) {
+        if (
+          repositoryGeneration !== loadGeneration.current ||
+          operationGeneration !== migrationGeneration.current
+        ) {
+          return;
+        }
+        setMigrationError(
+          `Migration was applied, but the policy view could not be refreshed: ${errorMessage(refreshError)}`,
+        );
+      }
+    } catch (migrationRequestError) {
+      if (
+        repositoryGeneration !== loadGeneration.current ||
+        operationGeneration !== migrationGeneration.current
+      ) {
+        return;
+      }
+      setMigrationPreview(undefined);
+      if (
+        migrationRequestError instanceof EngineRequestError &&
+        migrationRequestError.code === 'MIGRATION_STALE'
+      ) {
+        setMigrationPhase('stale');
+        setLiveAnnouncement(
+          'The migration preview is stale. Nothing was overwritten; review the current policy again.',
+        );
+      } else {
+        setMigrationPhase('error');
+        setMigrationError(errorMessage(migrationRequestError));
+        setLiveAnnouncement('Migration apply failed. No command was run.');
+      }
+    }
+  }, [client, config?.config?.version, migrationPreview, repository]);
 
   const runVerification = useCallback(async () => {
     if (!repository || !config?.exists) {
@@ -417,6 +552,9 @@ export function useDashboard(
     profileProgress,
     profileError,
     config,
+    migrationPreview,
+    migrationPhase,
+    migrationError,
     inspection,
     latestGate,
     history,
@@ -431,6 +569,8 @@ export function useDashboard(
     understandProject,
     stopProjectProfile,
     initializeProject,
+    previewMigration,
+    applyMigration,
     runVerification,
     stopVerification,
     selectHistoryRun,

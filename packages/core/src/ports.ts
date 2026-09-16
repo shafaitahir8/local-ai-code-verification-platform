@@ -1,8 +1,12 @@
 import type {
+  ConfigMigrationApplyOptions,
+  ConfigMigrationApplyResult,
+  ConfigMigrationPreview,
   InitializeProjectConfigOptions,
   InitializeProjectConfigResult,
   ProjectConfigPreview,
   ProjectConfigV1,
+  ProjectConfigV2,
   ProjectDiscovery,
 } from '@verify/config';
 import type {
@@ -16,6 +20,9 @@ import type { VerificationRunEvidence, VerificationRunRequest } from '@verify/ve
 export interface ConfigurationPort {
   exists(repositoryRoot: string): Promise<boolean>;
   load(repositoryRoot: string): Promise<ProjectConfigV1>;
+  loadPolicy(repositoryRoot: string): Promise<ProjectConfigV1 | ProjectConfigV2>;
+  migrationPreview(repositoryRoot: string): Promise<ConfigMigrationPreview>;
+  migrationApply(options: ConfigMigrationApplyOptions): Promise<ConfigMigrationApplyResult>;
   preview(repositoryRoot: string): Promise<ProjectConfigPreview>;
   discover(repositoryRoot: string): Promise<ProjectDiscovery>;
   initialize(options: InitializeProjectConfigOptions): Promise<InitializeProjectConfigResult>;

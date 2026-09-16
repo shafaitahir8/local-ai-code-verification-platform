@@ -37,7 +37,7 @@ test/run alternatives remain visible without a guessed default. A scan that reac
 budget returns an explicit partial profile, while a stopped scan returns a distinct cancelled
 result. Configuration schema version 2 and AI are not implemented by these slices.
 
-## Iteration 6 preview status
+## Iteration 6 status
 
 Iteration 6 slice 6A adds a read-only deterministic verification-plan preview for complete,
 unambiguous, single-root Node/Vite/Vitest profiles. It shows distinct Quick and Full plans, keeps
@@ -46,8 +46,13 @@ evidence. Quick favors confirmed tests and lint; Full also includes eligible typ
 checks. Missing or conflicting evidence fails closed, and no command is invented.
 
 This preview does not execute checks, write `.verify/project.yml`, initialize run-history storage,
-persist a plan, create an approval, or affect PASS/WARN/BLOCK. Schema-v2 migration, approval
-receipts, accepted-policy persistence, and AI remain later slices.
+persist a plan, create an approval, or affect PASS/WARN/BLOCK.
+
+Slice 6B adds an explicit schema-v1 to schema-v2 migration. Preview returns a deterministic target
+YAML and exact diff without writing. Apply requires both reviewed SHA-256 revisions, rejects a
+changed source, and atomically replaces only the policy file. Version 2 preserves named suites and
+adds proposed Quick/Full membership; migration does not approve commands. Approval receipts,
+accepted-policy persistence, smart-plan execution, and AI remain later slices.
 
 ## Architecture
 
@@ -98,6 +103,7 @@ The first-class commands are:
     verify discover
     verify understand
     verify plan
+    verify config migrate
     verify inspect
     verify run
     verify run --json
@@ -110,6 +116,7 @@ From the workspace during development, use the root wrapper and pass the target 
     pnpm verify discover C:\path\to\repository
     pnpm verify understand C:\path\to\repository
     pnpm verify plan C:\path\to\repository
+    pnpm verify config migrate C:\path\to\repository
     pnpm verify inspect C:\path\to\repository
     pnpm verify run C:\path\to\repository
     pnpm verify history C:\path\to\repository
@@ -124,6 +131,8 @@ The equivalent package command is **pnpm --filter @verify/cli dev COMMAND**. Aft
 - **verify plan** performs the same bounded scan and shows read-only Quick and Full recommendations,
   including selected/skipped reasons and evidence. Use **--json** for the protocol-equivalent typed
   result; it runs no check and saves no plan.
+- **verify config migrate** previews the exact schema-v2 policy and YAML diff without writing. Apply
+  requires an explicit `--apply` plus the source and target digests printed by that preview.
 - **verify inspect** reports root, branch, changed files, staged/unstaged state, additions, deletions, and status.
 - **verify run** validates configuration, shows and executes configured commands, streams progress, stores the normalized run, and evaluates the gate.
 - **verify run --json** writes stable machine-readable output without human progress text on stdout.
@@ -167,6 +176,10 @@ Configuration is committed with the repository at **.verify/project.yml**:
 
 Only commands explicitly present in validated configuration can run. Review repository configuration before invoking verification because commands execute locally with your user permissions.
 
+Schema version 1 remains supported unchanged. Explicit migration to version 2 preserves these
+named suites and adds proposed Quick/Full membership plus currently empty reserved policy fields.
+Migration and command approval are separate operations.
+
 `timeout_ms` is optional and must be a positive integer. Missing `type` values default to the suite
 ID; missing `failure_policy` values default to `warn` for lint suites and `block` otherwise. Run
 history defaults to **~/.verify/history.sqlite3** and can be redirected with
@@ -190,6 +203,8 @@ viewing the final gate, and reading recent local history. Opening a repository s
 deterministic scan that supplies both the project profile and the read-only Quick/Full plan preview.
 **Understand Project** refreshes that matching pair, **Stop project scan** cancels only the
 correlated operation, and expandable evidence explains each detection and recommendation.
+Configured version-1 repositories also expose a review-only migration card with the exact YAML diff;
+opening a repository never applies migration automatically.
 
 Run the browser UI with **pnpm --filter @verify/desktop dev**. With Rust and the platform-specific Tauri prerequisites installed, run the native application with **pnpm --filter @verify/desktop tauri dev** and build it with **pnpm --filter @verify/desktop desktop:build**.
 

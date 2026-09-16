@@ -46,6 +46,9 @@ owned by its source package.
 - `verification.plan`
 - `config.get`
 - `config.init`
+- `config.policy.get`
+- `config.migrate.preview`
+- `config.migrate.apply`
 - `repository.inspect`
 - `verification.run`
 - `verification.cancel`
@@ -67,6 +70,12 @@ deterministic Quick and Full plan previews. It reuses `profile.progress` while p
 either `{ "status": "completed", "preview": ... }` or `{ "status": "cancelled" }`. The preview
 copies observed task candidates and their evidence into selected or skipped decisions with reasons;
 the method executes no command and persists no profile, plan, configuration, or run history.
+
+`config.get` and `config.init` retain their strict schema-v1 results. The additive
+`config.policy.get` inspects either supported policy version. `config.migrate.preview` returns a
+read-only v1-to-v2 proposal with complete target YAML, exact diff, explanation, and source/target
+SHA-256 digests. `config.migrate.apply` requires both reviewed digests; a stale source or target
+proposal fails with `MIGRATION_STALE`. Migration does not approve or execute commands.
 
 `verification.cancel` is an additive version 1 control request. It has its own request ID and names
 the active `verification.run` request in `params.targetRequestId`. Its terminal result is

@@ -3918,3 +3918,248 @@ Next safe step:
 
 - Run final formatting/whitespace checks, stage only audited 6A files, review `git diff --cached`
   and `git diff --cached --check`, create the authorized single commit, then confirm a clean tree.
+
+## 2026-09-16 — Iteration 6 slice 6B start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Confirmed a clean tree at `c8d7f4a` (6A) and unchanged `v0.1.0` at `fb1880d`.
+- Read the architecture, completed TASK-015, roadmap, and configuration/protocol ADRs; defined
+  TASK-016's review-first v2 boundary and separate migration-versus-approval rule.
+
+Affected:
+
+- TASK-016 and this append-only recovery journal; no runtime behavior changed yet.
+
+Validated:
+
+- Git status was clean; no 6B code was present at start.
+
+Remaining:
+
+- Implement strict v2 policy validation, deterministic preview/diff, stale-safe atomic apply,
+  additive core/protocol/CLI/desktop projections, and focused/full validation.
+
+Next safe step:
+
+- Implement and test the configuration migration adapter first, preserving all v1 APIs.
+
+## 2026-09-16 — Iteration 6 core migration boundary
+
+Status: COMPLETE
+
+Completed:
+
+- Added canonical-root policy inspection and digest-bound migration preview/apply delegation to
+  core. Legacy configured verification reads the same named suites from v1 or v2, never proposed
+  plan membership or launch fields.
+- Preserved strict `getConfiguration` and read-only 6A plan preview use cases.
+
+Affected:
+
+- `@verify/core` application/port/tests/docs; architecture and guide descriptions are in progress.
+
+Validated:
+
+- Core typecheck, lint, 21 tests, and build passed. An initial new-test lint failure from an
+  unbound spy target was fixed with method-safe spying; no production semantics changed.
+
+Remaining:
+
+- Finish config parser/atomic adapter, protocol/CLI/desktop integration, interface tests, and full
+  sequential validation.
+
+Next safe step:
+
+- Validate the config adapter's strict v2 parser, deterministic preview, and stale-safe apply,
+  then run focused cross-interface tests.
+
+## 2026-09-16 — Iteration 6 slice 6B interrupted integration checkpoint
+
+Status: IN PROGRESS
+
+Completed:
+
+- Implemented the draft strict schema-v2/migration adapter, additive protocol methods, CLI
+  preview/apply flow, version-aware policy loading, and desktop review/apply presentation.
+- Desktop behavior includes no automatic migration, exact-diff review, explicit apply, stale
+  conflict handling, post-apply refresh, and repository-generation guards.
+
+Affected:
+
+- `@verify/config`, `@verify/core`, `@verify/protocol`, CLI, desktop, architecture/user/package
+  documentation, TASK-016, and focused tests. No Rust/native source is changed.
+
+Validated:
+
+- Core lint/typecheck, 21 tests, and build passed.
+- Desktop focused typecheck and 27 application tests passed before the interruption.
+- Protocol/CLI typecheck passed; their focused test run and the config adapter validation were
+  still in flight when delegated work stopped at the usage limit.
+
+Remaining:
+
+- Audit and finish config atomic-write/diff tests, run focused protocol/CLI/interface-equivalence
+  suites, reconcile docs, then run the full sequential workspace gates and final Git audit.
+
+Next safe step:
+
+- Treat the working tree as authoritative; inspect the full diff, run `@verify/config` focused
+  lint/typecheck/tests/build, and fix only genuine 6B defects before cross-interface validation.
+
+## 2026-09-16 — Schema-v2 migration adapter validation
+
+Status: COMPLETE
+
+Completed:
+
+- Audited the strict v2 parser, deterministic exact-diff preview, raw-byte digest binding, and
+  explicit compare-and-replace apply path.
+- Confirmed the synced sibling temporary file is removed after a simulated replacement failure;
+  fixed only a test type-import lint issue.
+
+Affected:
+
+- `@verify/config` schema/migration APIs, tests, and package documentation.
+
+Validated:
+
+- Config lint/typecheck/build passed; 29 tests passed across four files; config diff check passed.
+- Preview leaves the source and directory entries unchanged. Comment-only source edits, target
+  revision mismatches, malformed/unsupported input, missing files, and symbolic paths fail closed.
+- Static inspection found no process execution or SQLite dependency in the configuration package.
+
+Remaining:
+
+- Complete protocol/CLI/desktop equivalence validation, then run the full sequential workspace
+  regression and final scope/Git audit.
+
+Next safe step:
+
+- Finish focused protocol/CLI and desktop gates without overlapping the later full Turbo graphs.
+
+## 2026-09-16 — Migration interface integration validation
+
+Status: COMPLETE
+
+Completed:
+
+- Validated additive policy/migration protocol methods, CLI preview/apply, and the desktop's
+  review-only migration card through the shared core contract.
+- Fixed CLI JSON stale conflicts to preserve `MIGRATION_STALE`; fixed only test typing and Windows
+  path literals in desktop coverage.
+- Added a real Node/Vite/Vitest migration regression proving the normalized 6A plan is unchanged.
+
+Affected:
+
+- `@verify/protocol`, CLI, desktop UI/tests/docs, and this journal.
+
+Validated:
+
+- Protocol format/lint/typecheck/build and 22 tests passed.
+- CLI format/lint/typecheck/build passed; the full focused suite passed 29 tests and all four
+  migration cases passed after the final regression addition.
+- Desktop format/lint/typecheck/build and 46 tests passed, including 27 focused application tests.
+- Preview/apply tests found no command marker or SQLite file; desktop open performs neither
+  preview nor apply, and stale/reopen/repository-switch behavior passed.
+
+Remaining:
+
+- Run full workspace format, lint, typecheck, tests, build, and diff checks sequentially; reconcile
+  TASK-016/docs, then complete the final Git scope audit and commit if green.
+
+Next safe step:
+
+- Record the full-regression start checkpoint and run each root workspace gate without overlap.
+
+## 2026-09-16 — Iteration 6 slice 6B full regression start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Completed focused config/core/protocol/CLI/desktop audits and validation.
+- Reconciled root architecture, user, package, and storage documentation with explicit migration.
+
+Affected:
+
+- The intended TASK-016 source, tests, and documentation snapshot only; no native/Rust files.
+
+Validated:
+
+- Focused package gates are green; current `git diff --check` is clean.
+
+Remaining:
+
+- Run sequential root format, lint, typecheck, test, and build gates; perform final diff/status and
+  ignored-artifact audit before staging.
+
+Next safe step:
+
+- Run `corepack pnpm format:check`, then lint, typecheck, tests, and build one at a time.
+
+## 2026-09-16 — Iteration 6 slice 6B full regression
+
+Status: COMPLETE
+
+Completed:
+
+- Completed the full sequential workspace gate after focused 6B validation.
+- Applied repository formatting to six new/modified files identified by the first format check;
+  this was mechanical and changed no behavior.
+
+Affected:
+
+- The complete TASK-016 source, test, and documentation snapshot; no Rust/native source.
+
+Validated:
+
+- Root format, lint, and typecheck passed across all 13 packages.
+- Root test graph passed all 13 package tasks, including config 29, protocol 22, core 21, CLI 30,
+  and desktop 46 tests.
+- Root build completed all 13 packages/applications successfully.
+
+Remaining:
+
+- Final full diff/status/ignored-output audit, cached/task documentation review, staging review, and
+  authorized durable commit.
+
+Next safe step:
+
+- Run final `git diff --check`, inspect every modified/untracked path and ignored generated output,
+  then stage only the coherent 6B snapshot.
+
+## 2026-09-16 — Iteration 6 slice 6B final Git audit
+
+Status: COMPLETE
+
+Completed:
+
+- Reviewed all tracked modifications and five untracked TASK-016 files; every path belongs to the
+  v2 migration adapter, shared interface projections, tests, or required documentation.
+- Confirmed no dependency/lockfile, Rust/Tauri-native, storage schema, generated binary, installer,
+  database, log, coverage, build-output, or temporary artifact is part of the patch.
+
+Affected:
+
+- TASK-016's config/core/protocol/CLI/desktop source and tests plus architecture/root/package/user
+  documentation and this append-only journal.
+
+Validated:
+
+- Final format and `git diff --check` passed after documentation reconciliation.
+- Ignore rules cover `node_modules`, Turbo/dist/target output, Tauri sidecars/installers, logs,
+  test reports, environment files, and local SQLite/database state.
+- `v0.1.0` remains at `fb1880d`; 6A remains the unchanged parent at `c8d7f4a`.
+
+Remaining:
+
+- Stage only the audited snapshot, review the cached diff/stat/check, and create the authorized 6B
+  durable commit. Do not push, tag, or begin 6C.
+
+Next safe step:
+
+- Stage the audited tracked paths plus the five named untracked files, run cached checks, and commit
+  with `feat: add reviewable schema v2 migration` if the index matches this audit.

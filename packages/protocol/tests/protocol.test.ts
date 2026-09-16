@@ -18,8 +18,26 @@ import {
   ProtocolDecodeError,
   PROTOCOL_VERSION,
   type ProtocolEventMessage,
+  type ProtocolResultMap,
   type ProtocolRequest,
 } from '../src/index.js';
+
+const sourceDigest = 'a'.repeat(64);
+const targetDigest = 'b'.repeat(64);
+
+function migratedConfig(): ProtocolResultMap['config.migrate.apply']['config'] {
+  return {
+    version: 2,
+    project: { name: 'example' },
+    suites: {
+      test: { type: 'test', command: 'npm test', failure_policy: 'block' },
+    },
+    plans: { quick: { suites: ['test'] }, full: { suites: ['test'] } },
+    launch_targets: {},
+    discovery: { exclusions: [] },
+    overrides: {},
+  };
+}
 
 function completedRun(): VerificationRun {
   return {
@@ -755,6 +773,126 @@ describe('server message codec', () => {
         result: invalidRun as unknown as VerificationRun,
       }),
     ).toThrow(ProtocolDecodeError);
+  });
+});
+
+describe('additive configuration migration protocol', () => {
+  it('round-trips policy inspection, preview, and guarded apply without changing protocol version', () => {
+    const policyRequest = {
+      protocolVersion: 1,
+      id: 'policy',
+      method: 'config.policy.get',
+      params: { repository: '/repo' },
+    } as const;
+    const previewRequest = {
+      protocolVersion: 1,
+      id: 'preview',
+      method: 'config.migrate.preview',
+      params: { repository: '/repo' },
+    } as const;
+    expect(decodeRequestLine(encodeRequest(policyRequest))).toEqual(policyRequest);
+    expect(decodeRequestLine(encodeRequest(previewRequest))).toEqual(previewRequest);
+
+    const applyRequest = {
+      protocolVersion: 1,
+      id: 'apply',
+      method: 'config.migrate.apply',
+      params: {
+        repository: '/repo',
+        expectedSourceDigest: sourceDigest,
+        expectedTargetDigest: targetDigest,
+      },
+    } as const;
+    expect(decodeRequestLine(encodeRequest(applyRequest))).toEqual(applyRequest);
+
+    const preview = {
+      path: '/repo/.verify/project.yml',
+      sourceVersion: 1 as const,
+      targetVersion: 2 as const,
+      sourceDigest,
+      targetDigest,
+      targetYaml: 'version: 2\n',
+      diff: '--- a/.verify/project.yml\n+++ b/.verify/project.yml\n',
+      summary: 'Existing suites are preserved.',
+    };
+    expect(
+      decodeResultLine(
+        'config.migrate.preview',
+        encodeResult('config.migrate.preview', {
+          protocolVersion: 1,
+          id: 'preview',
+          result: preview,
+        }),
+      ),
+    ).toEqual({ protocolVersion: 1, id: 'preview', result: preview });
+
+    const applied = {
+      path: preview.path,
+      version: 2 as const,
+      sourceDigest,
+      targetDigest,
+      config: migratedConfig(),
+    };
+    expect(
+      decodeResultLine(
+        'config.migrate.apply',
+        encodeResult('config.migrate.apply', {
+          protocolVersion: 1,
+          id: 'apply',
+          result: applied,
+        }),
+      ),
+    ).toEqual({ protocolVersion: 1, id: 'apply', result: applied });
+
+    const inspected = {
+      repositoryRoot: '/repo',
+      path: preview.path,
+      exists: true,
+      config: migratedConfig(),
+    };
+    expect(
+      decodeResultLine(
+        'config.policy.get',
+        encodeResult('config.policy.get', {
+          protocolVersion: 1,
+          id: 'inspect',
+          result: inspected,
+        }),
+      ),
+    ).toEqual({ protocolVersion: 1, id: 'inspect', result: inspected });
+  });
+
+  it('rejects missing or malformed reviewed digests and keeps config.get strict v1', () => {
+    const request = {
+      protocolVersion: 1,
+      id: 'apply',
+      method: 'config.migrate.apply',
+      params: { repository: '/repo', expectedSourceDigest: 'not-a-digest' },
+    };
+    expect(() => decodeRequestLine(JSON.stringify(request))).toThrow(ProtocolDecodeError);
+
+    expect(() =>
+      encodeResult('config.get', {
+        protocolVersion: 1,
+        id: 'legacy',
+        result: {
+          exists: true,
+          path: '/repo/.verify/project.yml',
+          config: migratedConfig() as unknown as NonNullable<
+            ProtocolResultMap['config.get']['config']
+          >,
+        },
+      }),
+    ).toThrow(ProtocolDecodeError);
+  });
+
+  it('preserves a structured stale migration error', () => {
+    const error = {
+      protocolVersion: 1,
+      id: 'apply',
+      error: { code: 'MIGRATION_STALE', message: 'Policy changed since preview.' },
+    } as const;
+    expect(decodeResultLine('config.migrate.apply', encodeError(error))).toEqual(error);
   });
 });
 

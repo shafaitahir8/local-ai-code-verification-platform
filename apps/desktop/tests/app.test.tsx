@@ -126,6 +126,143 @@ describe('desktop dashboard', () => {
     expect(request.mock.calls.some(([method]) => method === 'verification.run')).toBe(false);
   });
 
+  it('does not preview or apply configuration migration merely by opening a repository', async () => {
+    const client = createMockEngineClient({ latencyMs: 0 });
+    const request = vi.spyOn(client, 'request');
+    render(
+      <App
+        client={client}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\migration-review"
+      />,
+    );
+
+    const card = await screen.findByRole('region', { name: 'Configuration Migration' });
+    expect(card).toHaveTextContent('Current version: 1 → Target version: 2');
+    expect(within(card).getByRole('button', { name: 'Review Migration' })).toBeEnabled();
+    expect(within(card).queryByRole('button', { name: 'Apply Migration' })).not.toBeInTheDocument();
+    expect(request.mock.calls.some(([method]) => method === 'config.policy.get')).toBe(true);
+    expect(request.mock.calls.some(([method]) => method === 'config.get')).toBe(false);
+    expect(request.mock.calls.some(([method]) => method === 'config.migrate.preview')).toBe(false);
+    expect(request.mock.calls.some(([method]) => method === 'config.migrate.apply')).toBe(false);
+  });
+
+  it('renders the engine exact diff and applies only reviewed digests after a deliberate click', async () => {
+    const user = userEvent.setup();
+    const client = createMockEngineClient({ latencyMs: 0 });
+    const repository = 'C:\\work\\migration-apply';
+    const expectedPreview = await client.request('config.migrate.preview', {
+      repository,
+    });
+    const request = vi.spyOn(client, 'request');
+    render(
+      <App client={client} pickRepository={async () => null} initialRepository={repository} />,
+    );
+
+    const card = await screen.findByRole('region', { name: 'Configuration Migration' });
+    await user.click(within(card).getByRole('button', { name: 'Review Migration' }));
+    expect(
+      await within(card).findByRole('heading', { name: 'Migration Preview' }),
+    ).toBeInTheDocument();
+    expect(card).toHaveTextContent('Preserves named suites and proposes Quick and Full membership');
+    const diff = card.querySelector('pre.migration-diff');
+    expect(diff?.textContent).toBe(expectedPreview.diff);
+    expect(diff).toHaveTextContent('-version: 1');
+    expect(diff).toHaveTextContent('+version: 2');
+    expect(request.mock.calls.some(([method]) => method === 'config.migrate.apply')).toBe(false);
+
+    await user.click(within(card).getByRole('button', { name: 'Apply Migration' }));
+    await waitFor(() => expect(card).toHaveTextContent('Current version: 2'));
+    expect(card).toHaveTextContent('Commands are not approved by this change.');
+    const applyCall = request.mock.calls.find(([method]) => method === 'config.migrate.apply');
+    expect(applyCall?.[1]).toMatchObject({
+      repository,
+      expectedSourceDigest: expectedPreview.sourceDigest,
+      expectedTargetDigest: expectedPreview.targetDigest,
+    });
+    expect(request.mock.calls.some(([method]) => method === 'verification.run')).toBe(false);
+    expect(screen.getByRole('region', { name: 'Configured checks' })).toHaveTextContent('test');
+  });
+
+  it('reports a stale migration conflict without claiming success or overwriting policy', async () => {
+    const user = userEvent.setup();
+    const client = createMockEngineClient({ latencyMs: 0, migrationStale: true });
+    const request = vi.spyOn(client, 'request');
+    render(
+      <App
+        client={client}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\stale-migration"
+      />,
+    );
+
+    const card = await screen.findByRole('region', { name: 'Configuration Migration' });
+    await user.click(within(card).getByRole('button', { name: 'Review Migration' }));
+    await user.click(await within(card).findByRole('button', { name: 'Apply Migration' }));
+
+    expect(await within(card).findByRole('alert')).toHaveTextContent(
+      'The policy changed after this preview. Nothing was overwritten.',
+    );
+    expect(card).toHaveTextContent('Current version: 1');
+    expect(within(card).queryByRole('button', { name: 'Apply Migration' })).not.toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: 'Review Migration' })).toBeEnabled();
+    expect(request.mock.calls.some(([method]) => method === 'verification.run')).toBe(false);
+  });
+
+  it('reopens a migrated version-2 repository without calling strict version-1 config.get', async () => {
+    const client = createMockEngineClient({ latencyMs: 0, initialPolicyVersion: 2 });
+    const request = vi.spyOn(client, 'request');
+    render(
+      <App
+        client={client}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\already-migrated"
+      />,
+    );
+
+    const card = await screen.findByRole('region', { name: 'Configuration Migration' });
+    expect(card).toHaveTextContent('Current version: 2');
+    expect(card).toHaveTextContent('No migration is needed');
+    expect(within(card).queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Configured checks' })).toHaveTextContent('test');
+    expect(screen.getByRole('button', { name: 'Run verification' })).toBeEnabled();
+    expect(request.mock.calls.some(([method]) => method === 'config.get')).toBe(false);
+  });
+
+  it('does not let a delayed migration preview replace another selected repository', async () => {
+    let releasePreview: () => void = () => undefined;
+    const barrier = new Promise<void>((resolve) => {
+      releasePreview = resolve;
+    });
+    const user = userEvent.setup();
+    render(
+      <App
+        client={createMockEngineClient({ latencyMs: 0, migrationPreviewBarrier: barrier })}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\old-migration"
+      />,
+    );
+
+    const oldCard = await screen.findByRole('region', { name: 'Configuration Migration' });
+    await user.click(within(oldCard).getByRole('button', { name: 'Review Migration' }));
+    expect(oldCard).toHaveTextContent('Preparing the exact version 1 to version 2 policy diff.');
+    const path = screen.getByRole('textbox', { name: 'Repository path' });
+    await user.clear(path);
+    await user.type(path, 'C:\\work\\new-migration');
+    await user.click(screen.getByRole('button', { name: 'Inspect again' }));
+    expect(await screen.findByRole('heading', { name: 'new-migration' })).toBeInTheDocument();
+
+    releasePreview();
+    await waitFor(() => {
+      expect(screen.getByRole('region', { name: 'Configuration Migration' })).not.toHaveTextContent(
+        'Migration Preview',
+      );
+    });
+    expect(screen.getByRole('region', { name: 'Configuration Migration' })).toHaveTextContent(
+      'Current version: 1',
+    );
+  });
+
   it('keeps conflicting evidence explicit instead of selecting a hidden winner', async () => {
     render(
       <App

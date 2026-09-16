@@ -12,6 +12,8 @@ pnpm verify init [repository] [--force] [--json]
 pnpm verify discover [repository] [--json]
 pnpm verify understand [repository] [--json]
 pnpm verify plan [repository] [--json]
+pnpm verify config migrate [repository] [--json]
+pnpm verify config migrate [repository] --apply --expected-digest <source-digest> --expected-target-digest <target-digest> [--json]
 pnpm verify inspect [repository] [--json]
 pnpm verify run [repository] [--json]
 pnpm verify gate [repository] [--json]
@@ -35,6 +37,14 @@ Human output shows selected and skipped observed checks, reasons, and source evi
 is the protocol-equivalent `{ status, preview? }` result. The command copies observed task
 candidates but never executes them, writes policy, or creates verification history; Ctrl+C returns
 exit code 3.
+
+`config migrate` defaults to a read-only schema-v1 to schema-v2 preview. Human output includes the
+current and target versions, explanation, exact YAML diff, complete proposed YAML, and the two
+digests needed for explicit apply. The `--apply` form requires both digests from a reviewed preview
+and rejects changed source or target policy instead of silently accepting a fresh proposal.
+Migration preserves named suites but does not approve commands or execute them; `verify run`
+continues using the named suites after migration. JSON apply reports a stale reviewed source or
+target with the structured `MIGRATION_STALE` error code.
 
 ## Allowed dependencies
 
@@ -77,8 +87,9 @@ that addon to a content-addressed per-user cache; it does not resolve packages f
 
 ## Versioned contracts
 
-The CLI targets configuration schema 1, protocol version 1, storage migration 1, and application
-version 0.1.0. Exit meanings and JSON fields must not change silently.
+The CLI keeps schema-v1 read/run behavior and adds explicit schema-v2 policy inspection/migration
+through additive methods. Protocol version 1, storage migration 1, and application version 0.1.0
+remain unchanged. Exit meanings and existing JSON fields must not change silently.
 
 ## Testing
 

@@ -20,11 +20,19 @@ export interface MockEngineClientOptions {
   readonly profileCompleteness?: 'complete' | 'partial';
   readonly profileAmbiguous?: boolean;
   readonly rejectProfileCancellation?: boolean;
+  readonly initialPolicyVersion?: 1 | 2;
+  readonly migrationStale?: boolean;
+  readonly migrationLatencyMs?: number;
+  readonly migrationPreviewBarrier?: Promise<void>;
 }
 
 type VerificationRun = ProtocolResultMap['verification.run'];
 type CheckResult = VerificationRun['checks'][number];
 type ProjectConfig = NonNullable<ProtocolResultMap['config.get']['config']>;
+type ProjectConfigV2 = Extract<
+  NonNullable<ProtocolResultMap['config.policy.get']['config']>,
+  { version: 2 }
+>;
 type ProjectProfile = Extract<
   ProtocolResultMap['project.profile'],
   { status: 'completed' }
@@ -339,6 +347,48 @@ function configFor(repository: string): ProjectConfig {
   };
 }
 
+function configV2For(repository: string): ProjectConfigV2 {
+  return {
+    ...configFor(repository),
+    version: 2,
+    plans: {
+      quick: { suites: ['test', 'lint'] },
+      full: { suites: ['test', 'typecheck', 'lint'] },
+    },
+    launch_targets: {},
+    discovery: { exclusions: [] },
+    overrides: {},
+  };
+}
+
+const MOCK_SOURCE_DIGEST = 'a'.repeat(64);
+const MOCK_TARGET_DIGEST = 'b'.repeat(64);
+const MOCK_TARGET_YAML = `version: 2
+project:
+  name: example
+suites: {}
+plans:
+  quick:
+    suites: [test, lint]
+  full:
+    suites: [test, typecheck, lint]
+launch_targets: {}
+discovery:
+  exclusions: []
+overrides: {}
+`;
+const MOCK_MIGRATION_DIFF = `--- .verify/project.yml (version 1)
++++ .verify/project.yml (version 2)
+@@ -1,1 +1,1 @@
+-version: 1
++version: 2
++plans:
++  quick:
++    suites: [test, lint]
++  full:
++    suites: [test, typecheck, lint]
+`;
+
 function checkResults(scenario: MockGateScenario): readonly CheckResult[] {
   const common = [
     {
@@ -541,7 +591,11 @@ export class MockEngineClient implements EngineClient {
   readonly #profileCompleteness: ProjectProfile['completeness'];
   readonly #profileAmbiguous: boolean;
   readonly #rejectProfileCancellation: boolean;
+  readonly #migrationStale: boolean;
+  readonly #migrationLatencyMs: number;
+  readonly #migrationPreviewBarrier?: Promise<void>;
   #configExists: boolean;
+  #policyVersion: 1 | 2;
 
   public constructor(options: MockEngineClientOptions = {}) {
     this.#scenario = options.gateScenario ?? 'PASS';
@@ -554,6 +608,10 @@ export class MockEngineClient implements EngineClient {
     this.#profileCompleteness = options.profileCompleteness ?? 'complete';
     this.#profileAmbiguous = options.profileAmbiguous ?? false;
     this.#rejectProfileCancellation = options.rejectProfileCancellation ?? false;
+    this.#migrationStale = options.migrationStale ?? false;
+    this.#migrationLatencyMs = options.migrationLatencyMs ?? this.#latencyMs;
+    this.#migrationPreviewBarrier = options.migrationPreviewBarrier;
+    this.#policyVersion = options.initialPolicyVersion ?? 1;
   }
 
   public async request<Method extends ProtocolMethod>(
@@ -561,7 +619,9 @@ export class MockEngineClient implements EngineClient {
     params: ProtocolParamsMap[Method],
     options: EngineRequestOptions = {},
   ): Promise<ProtocolResultMap[Method]> {
-    if (
+    if (method === 'config.migrate.preview' || method === 'config.migrate.apply') {
+      await pause(this.#migrationLatencyMs, options.signal);
+    } else if (
       method !== 'project.profile' &&
       method !== 'verification.plan' &&
       method !== 'verification.run'
@@ -735,10 +795,65 @@ export class MockEngineClient implements EngineClient {
       }
 
       case 'config.get':
+        if (this.#policyVersion === 2) {
+          throw new EngineRequestError('UNSUPPORTED_SCHEMA', 'config.get accepts version 1 only.');
+        }
         return {
           exists: this.#configExists,
           path: `${repository}/.verify/project.yml`,
           ...(this.#configExists ? { config: configFor(repository) } : {}),
+        } as ProtocolResultMap[Method];
+
+      case 'config.policy.get':
+        return {
+          repositoryRoot: repository,
+          exists: this.#configExists,
+          path: `${repository}/.verify/project.yml`,
+          ...(this.#configExists
+            ? {
+                config: this.#policyVersion === 1 ? configFor(repository) : configV2For(repository),
+              }
+            : {}),
+        } as ProtocolResultMap[Method];
+
+      case 'config.migrate.preview':
+        await this.#migrationPreviewBarrier;
+        if (!this.#configExists || this.#policyVersion !== 1) {
+          throw new EngineRequestError(
+            'UNSUPPORTED_SCHEMA',
+            'Only an existing version 1 policy can be migrated.',
+          );
+        }
+        return {
+          path: `${repository}/.verify/project.yml`,
+          sourceVersion: 1,
+          targetVersion: 2,
+          sourceDigest: MOCK_SOURCE_DIGEST,
+          targetDigest: MOCK_TARGET_DIGEST,
+          targetYaml: MOCK_TARGET_YAML,
+          diff: MOCK_MIGRATION_DIFF,
+          summary:
+            'Preserves named suites and proposes Quick and Full membership without approving commands.',
+        } as ProtocolResultMap[Method];
+
+      case 'config.migrate.apply':
+        if (
+          !this.#configExists ||
+          this.#policyVersion !== 1 ||
+          this.#migrationStale ||
+          !('expectedSourceDigest' in params) ||
+          params.expectedSourceDigest !== MOCK_SOURCE_DIGEST ||
+          params.expectedTargetDigest !== MOCK_TARGET_DIGEST
+        ) {
+          throw new EngineRequestError('MIGRATION_STALE', 'The reviewed policy changed.');
+        }
+        this.#policyVersion = 2;
+        return {
+          path: `${repository}/.verify/project.yml`,
+          version: 2,
+          sourceDigest: MOCK_SOURCE_DIGEST,
+          targetDigest: MOCK_TARGET_DIGEST,
+          config: configV2For(repository),
         } as ProtocolResultMap[Method];
 
       case 'config.init':

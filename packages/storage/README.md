@@ -49,7 +49,7 @@ is not encrypted and retained text is not redacted. Callers control retention an
 
 The schema starts at migration 1. Changes require ordered forward migrations, checksum and
 existing-data tests, and must fail closed when an older binary sees an unsupported ledger version.
-Repository policy remains in configuration schema version 1 rather than being migrated into SQLite.
+Repository policy remains in versioned `.verify/project.yml` rather than being migrated into SQLite.
 
 ## Testing
 

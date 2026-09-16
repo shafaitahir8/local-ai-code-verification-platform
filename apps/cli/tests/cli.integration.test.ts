@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -16,6 +16,7 @@ import {
   projectProfileResultSchema,
   PROTOCOL_VERSION,
   type ProtocolRequest,
+  type ProtocolResultMap,
   type ProtocolServerMessage,
 } from '@verify/protocol';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -651,6 +652,245 @@ describe('actual CLI workflow', () => {
     expect(run.status).toBe('cancelled');
     expect(run.checks).toContainEqual(expect.objectContaining({ status: 'cancelled' }));
   }, 15_000);
+});
+
+describe('reviewable configuration migration interfaces', () => {
+  it('exposes one deterministic no-write preview through core, CLI, and protocol', async () => {
+    const { repository, database } = await fixture('basic-pass');
+    const path = join(repository, '.verify', 'project.yml');
+    const source = await readFile(path, 'utf8');
+    const composition = createApplicationComposition();
+    openCompositions.push(composition);
+
+    const core = await composition.application.previewProjectConfigMigration(repository);
+    const cli = await runCli(['config', 'migrate', repository, '--json'], database);
+    expect(cli.code).toBe(0);
+    expect(cli.stderr).toBe('');
+    expect(JSON.parse(cli.stdout)).toEqual(core);
+
+    const frames: string[] = [];
+    await handleProtocolRequest(
+      composition.application,
+      {
+        protocolVersion: PROTOCOL_VERSION,
+        id: 'migration-preview',
+        method: 'config.migrate.preview',
+        params: { repository },
+      },
+      { write: (frame) => frames.push(frame), diagnostic: () => undefined },
+    );
+    expect(frames).toHaveLength(1);
+    expect(decodeResultLine('config.migrate.preview', frames[0] ?? '')).toMatchObject({
+      result: core,
+    });
+
+    expect(core).toMatchObject({ sourceVersion: 1, targetVersion: 2 });
+    expect(core.sourceDigest).toMatch(/^[a-f0-9]{64}$/u);
+    expect(core.targetDigest).toMatch(/^[a-f0-9]{64}$/u);
+    expect(core.diff).toContain('version: 2');
+    expect(await readFile(path, 'utf8')).toBe(source);
+    await expect(readFile(database, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('keeps the read-only 6A plan equivalent across a real Node/Vite/Vitest migration', async () => {
+    const { repository, database } = await fixture('project-intelligence/node-vite-vitest');
+    const configDirectory = join(repository, '.verify');
+    const configPath = join(configDirectory, 'project.yml');
+    const commandMarker = join(repository, 'migration-command-executed.marker');
+    await mkdir(configDirectory);
+    await writeFile(
+      configPath,
+      [
+        'version: 1',
+        'project:',
+        '  name: profile-fixture',
+        'suites:',
+        '  test:',
+        '    type: test',
+        '    command: node never-migrate.mjs',
+        '    failure_policy: block',
+        '  lint:',
+        '    type: lint',
+        '    command: npm run lint',
+        '    failure_policy: warn',
+        '  typecheck:',
+        '    type: typecheck',
+        '    command: npm run typecheck',
+        '    failure_policy: block',
+        '  build:',
+        '    type: build',
+        '    command: npm run build',
+        '    failure_policy: block',
+        '',
+      ].join('\n'),
+    );
+    await writeFile(
+      join(repository, 'never-migrate.mjs'),
+      [
+        "import { writeFileSync } from 'node:fs';",
+        "writeFileSync('migration-command-executed.marker', 'unexpected');",
+        '',
+      ].join('\n'),
+    );
+
+    const before = await runCliProcess(['plan', repository, '--json'], database);
+    expect(before).toMatchObject({ code: 0, stderr: '' });
+    const beforePlan = JSON.parse(before.stdout) as VerificationPlanPreviewResult;
+    const source = await readFile(configPath, 'utf8');
+
+    const previewResult = await runCliProcess(
+      ['config', 'migrate', repository, '--json'],
+      database,
+    );
+    expect(previewResult).toMatchObject({ code: 0, stderr: '' });
+    const preview = JSON.parse(previewResult.stdout) as ProtocolResultMap['config.migrate.preview'];
+    expect(await readFile(configPath, 'utf8')).toBe(source);
+
+    const apply = await runCliProcess(
+      [
+        'config',
+        'migrate',
+        repository,
+        '--apply',
+        '--expected-digest',
+        preview.sourceDigest,
+        '--expected-target-digest',
+        preview.targetDigest,
+        '--json',
+      ],
+      database,
+    );
+    expect(apply).toMatchObject({ code: 0, stderr: '' });
+
+    const after = await runCliProcess(['plan', repository, '--json'], database);
+    expect(after).toMatchObject({ code: 0, stderr: '' });
+    const afterPlan = JSON.parse(after.stdout) as VerificationPlanPreviewResult;
+    expect(withoutVolatilePlanFields(afterPlan)).toStrictEqual(
+      withoutVolatilePlanFields(beforePlan),
+    );
+    await expect(readFile(commandMarker, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(readFile(database, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  }, 20_000);
+
+  it('requires both reviewed digests before apply and keeps migrated suites runnable', async () => {
+    const { repository, database } = await fixture('basic-pass');
+    const previewCli = await runCli(['config', 'migrate', repository, '--json'], database);
+    const preview = JSON.parse(previewCli.stdout) as ProtocolResultMap['config.migrate.preview'];
+
+    const missingReview = await runCliProcess(
+      ['config', 'migrate', repository, '--apply', '--json'],
+      database,
+    );
+    expect(missingReview.code).toBe(2);
+    expect(JSON.parse(missingReview.stdout)).toMatchObject({ error: { code: 'VERIFY_ERROR' } });
+    expect(await readFile(preview.path, 'utf8')).toContain('version: 1');
+
+    const humanPreview = await runCli(['config', 'migrate', repository], database);
+    expect(humanPreview.stdout).toContain(preview.diff);
+    expect(humanPreview.stdout).toContain(preview.sourceDigest);
+    expect(humanPreview.stdout).toContain(preview.targetDigest);
+
+    const appliedCli = await runCli(
+      [
+        'config',
+        'migrate',
+        repository,
+        '--apply',
+        '--expected-digest',
+        preview.sourceDigest,
+        '--expected-target-digest',
+        preview.targetDigest,
+        '--json',
+      ],
+      database,
+    );
+    expect(appliedCli.code).toBe(0);
+    const applied = JSON.parse(appliedCli.stdout) as ProtocolResultMap['config.migrate.apply'];
+    expect(applied).toMatchObject({
+      version: 2,
+      sourceDigest: preview.sourceDigest,
+      targetDigest: preview.targetDigest,
+      config: { suites: { test: { command: 'npm test' } } },
+    });
+    expect(await readFile(preview.path, 'utf8')).toBe(preview.targetYaml);
+
+    const composition = createApplicationComposition();
+    openCompositions.push(composition);
+    const policy = await composition.application.getProjectPolicy(repository);
+    expect(policy).toMatchObject({ exists: true, config: applied.config });
+    const frames: string[] = [];
+    await handleProtocolRequest(
+      composition.application,
+      {
+        protocolVersion: PROTOCOL_VERSION,
+        id: 'version-aware-policy',
+        method: 'config.policy.get',
+        params: { repository },
+      },
+      { write: (frame) => frames.push(frame), diagnostic: () => undefined },
+    );
+    expect(decodeResultLine('config.policy.get', frames[0] ?? '')).toMatchObject({
+      result: policy,
+    });
+
+    // Migration changes the policy version, not the legacy named-suite run semantics.
+    const run = await runCli(['run', repository, '--json'], database);
+    expect(run.code).toBe(0);
+    const result = JSON.parse(run.stdout) as VerificationRun;
+    expect(result.gate).toMatchObject({ status: 'PASS' });
+    expect(result.checks).toContainEqual(
+      expect.objectContaining({ id: 'test', command: 'npm test' }),
+    );
+  }, 20_000);
+
+  it('rejects stale source edits through a structured protocol conflict', async () => {
+    const { repository, database } = await fixture('basic-pass');
+    const composition = createApplicationComposition();
+    openCompositions.push(composition);
+    const preview = await composition.application.previewProjectConfigMigration(repository);
+    const source = await readFile(preview.path, 'utf8');
+    await writeFile(preview.path, `${source}# manual comment after preview\n`);
+
+    const staleCli = await runCliProcess(
+      [
+        'config',
+        'migrate',
+        repository,
+        '--apply',
+        '--expected-digest',
+        preview.sourceDigest,
+        '--expected-target-digest',
+        preview.targetDigest,
+        '--json',
+      ],
+      database,
+    );
+    expect(staleCli).toMatchObject({ code: 2, stderr: '' });
+    expect(JSON.parse(staleCli.stdout)).toMatchObject({
+      error: { code: 'MIGRATION_STALE' },
+    });
+
+    const frames: string[] = [];
+    await handleProtocolRequest(
+      composition.application,
+      {
+        protocolVersion: PROTOCOL_VERSION,
+        id: 'stale-apply',
+        method: 'config.migrate.apply',
+        params: {
+          repository,
+          expectedSourceDigest: preview.sourceDigest,
+          expectedTargetDigest: preview.targetDigest,
+        },
+      },
+      { write: (frame) => frames.push(frame), diagnostic: () => undefined },
+    );
+    expect(decodeResultLine('config.migrate.apply', frames[0] ?? '')).toMatchObject({
+      error: { code: 'MIGRATION_STALE' },
+    });
+    expect(await readFile(preview.path, 'utf8')).toBe(`${source}# manual comment after preview\n`);
+    await expect(readFile(database, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  });
 });
 
 describe('built child-process protocol', () => {

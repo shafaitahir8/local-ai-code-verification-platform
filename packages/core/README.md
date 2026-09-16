@@ -3,13 +3,16 @@
 ## Purpose
 
 Owns the deterministic application use cases shared by every interface: profile, preview Quick/Full
-verification plans, discover, initialize, inspect, run verification, retrieve the latest gate, and
-list history. It protects the boundary between interface composition and application behavior.
+verification plans, inspect project policy, preview/apply an explicit configuration migration,
+discover, initialize, inspect, run verification, retrieve the latest gate, and list history. It
+protects the boundary between interface composition and application behavior.
 
 ## Public API
 
 - `VerifierApplication`: orchestrates all supported use cases through injected ports.
 - Pure `createVerificationPlan` and `createVerificationPlanPreview` transformations.
+- `getProjectPolicy`, `previewProjectConfigMigration`, and `applyProjectConfigMigration` resolve
+  the canonical repository root and delegate versioned policy operations to `ConfigurationPort`.
 - `ProjectProfilerPort`, `ConfigurationPort`, `RepositoryPort`, `VerificationExecutorPort`, and
   `RunRepositoryPort`: application-facing boundary contracts.
 - Request and dependency types for initialization and verification.
@@ -45,6 +48,9 @@ persistence by the injected run repository.
   loads configuration, executes checks, or touches run storage.
 - Plan preview profiles once and derives both modes without loading configuration, converting
   candidates into executable suites, executing commands, or touching run storage.
+- Migration preview does not write; apply requires reviewed source/target digests and does not
+  approve or run commands. Legacy configured verification uses named suites from v1 or v2 policy,
+  never the new Quick/Full membership or launch-target fields.
 
 ## Security and privacy
 
@@ -54,9 +60,9 @@ redaction, sandboxing, or encryption behavior.
 
 ## Versioned contracts
 
-Core consumes project configuration schema version 1 and the v0.1 domain contracts. Protocol
-versioning is owned by `@verify/protocol`; incompatible core behavior changes require coordinated
-contract tests and documentation.
+Core consumes project configuration schemas 1 and 2 through a version-aware port while its strict
+v1 configuration use case remains unchanged. Protocol versioning is owned by `@verify/protocol`;
+incompatible core behavior changes require coordinated contract tests and documentation.
 
 ## Testing
 

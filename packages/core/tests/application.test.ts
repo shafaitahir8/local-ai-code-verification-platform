@@ -1,4 +1,9 @@
-import type { ProjectConfigPreview, ProjectConfigV1, ProjectDiscovery } from '@verify/config';
+import type {
+  ProjectConfigPreview,
+  ProjectConfigV1,
+  ProjectConfigV2,
+  ProjectDiscovery,
+} from '@verify/config';
 import type { ProjectProfileResult, RepositoryChange, VerificationRun } from '@verify/domain';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -19,6 +24,17 @@ const config: ProjectConfigV1 = {
     test: { type: 'test', command: 'npm test', failure_policy: 'block' },
   },
 };
+const migratedConfig: ProjectConfigV2 = {
+  version: 2,
+  project: config.project,
+  suites: config.suites,
+  plans: { quick: { suites: ['test'] }, full: { suites: ['test'] } },
+  launch_targets: {},
+  discovery: { exclusions: [] },
+  overrides: {},
+};
+const sourceDigest = 'a'.repeat(64);
+const targetDigest = 'b'.repeat(64);
 const discovery: ProjectDiscovery = {
   repositoryRoot: root,
   projectName: 'example',
@@ -43,6 +59,24 @@ function dependencies() {
   const configuration: ConfigurationPort = {
     exists: async () => true,
     load: async () => config,
+    loadPolicy: async () => config,
+    migrationPreview: async () => ({
+      path: '/repo/.verify/project.yml',
+      sourceVersion: 1,
+      targetVersion: 2,
+      sourceDigest,
+      targetDigest,
+      targetYaml: 'version: 2\n',
+      diff: '--- a/.verify/project.yml\n+++ b/.verify/project.yml\n',
+      summary: 'Retain named suites and propose Quick/Full membership.',
+    }),
+    migrationApply: async () => ({
+      path: '/repo/.verify/project.yml',
+      version: 2,
+      sourceDigest,
+      targetDigest,
+      config: migratedConfig,
+    }),
     preview: async (): Promise<ProjectConfigPreview> => ({
       path: '/repo/.verify/project.yml',
       exists: false,
@@ -115,6 +149,65 @@ function dependencies() {
 }
 
 describe('VerifierApplication', () => {
+  it('projects policy and migration through the configuration port without executing or persisting', async () => {
+    const ports = dependencies();
+    const preview = vi.spyOn(ports.configuration, 'migrationPreview');
+    const apply = vi.spyOn(ports.configuration, 'migrationApply');
+    ports.configuration.loadPolicy = async () => migratedConfig;
+    ports.profiler.profile = async () => {
+      throw new Error('Migration cannot profile or execute an observed task.');
+    };
+    ports.verification.run = async () => {
+      throw new Error('Migration cannot execute a project command.');
+    };
+    ports.runs.saveRun = async () => {
+      throw new Error('Migration cannot create a verification record.');
+    };
+    const application = new VerifierApplication(ports);
+
+    expect(await application.getProjectPolicy('/repo/subdirectory')).toEqual({
+      repositoryRoot: root,
+      path: '/repo/.verify/project.yml',
+      exists: true,
+      config: migratedConfig,
+    });
+    expect(await application.previewProjectConfigMigration('/repo/subdirectory')).toMatchObject({
+      sourceDigest,
+      targetDigest,
+    });
+    expect(preview).toHaveBeenCalledWith(root);
+    expect(
+      await application.applyProjectConfigMigration({
+        repository: '/repo/subdirectory',
+        expectedSourceDigest: sourceDigest,
+        expectedTargetDigest: targetDigest,
+      }),
+    ).toMatchObject({ config: migratedConfig });
+    expect(apply).toHaveBeenCalledWith({
+      repositoryRoot: root,
+      expectedSourceDigest: sourceDigest,
+      expectedTargetDigest: targetDigest,
+    });
+  });
+
+  it('uses unchanged named suites for legacy configured verification after an accepted migration', async () => {
+    const ports = dependencies();
+    ports.configuration.loadPolicy = async () => migratedConfig;
+    ports.configuration.load = async () => {
+      throw new Error('A v2 policy must not be passed through strict config.get.');
+    };
+    const executor = vi.spyOn(ports.verification, 'run');
+
+    const run = await new VerifierApplication(ports).runVerification({ repository: root });
+
+    expect(run.gate?.status).toBe('PASS');
+    expect(executor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        checks: [expect.objectContaining({ id: 'test', command: 'npm test', type: 'test' })],
+      }),
+    );
+  });
+
   it('initializes from a discovered and user-reviewable preview', async () => {
     const ports = dependencies();
     const application = new VerifierApplication(ports);

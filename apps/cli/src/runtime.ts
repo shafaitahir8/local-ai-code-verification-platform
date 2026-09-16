@@ -1,3 +1,5 @@
+import { ConfigMigrationStaleError } from '@verify/config';
+
 import { createApplicationComposition, type ApplicationComposition } from './composition.js';
 import { EXIT_CODES } from './exit-codes.js';
 import { formatError } from './format.js';
@@ -37,7 +39,7 @@ export async function runCli(options: CliRuntimeOptions = {}): Promise<number> {
       io.writeOut(
         `${JSON.stringify({
           error: {
-            code: 'VERIFY_ERROR',
+            code: error instanceof ConfigMigrationStaleError ? 'MIGRATION_STALE' : 'VERIFY_ERROR',
             message: formatError(error),
           },
         })}\n`,
