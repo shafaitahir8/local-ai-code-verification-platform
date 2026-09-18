@@ -5126,3 +5126,36 @@ Next safe step:
 
 - Stage only the 6D source/tests/docs, review the cached patch and whitespace check, commit once,
   push `main` to `origin`, and verify the remote SHA.
+
+## 2026-09-18 — Hosted slice 6D CI validated
+
+Status: COMPLETE
+
+Completed:
+
+- Confirmed the 6D milestone commit `a3cc9d1b4834cfa81f6b621a5462a12a4b48b40b` is on
+  `origin/main` with a clean local tree. Reviewed hosted GitHub Actions CI run `35307647225`
+  against that exact commit.
+
+Affected:
+
+- Hosted validation record only; no product source or release tag changed.
+
+Validated:
+
+- Hosted macOS (`105483019058`), Ubuntu (`105483019178`), and Windows (`105483019179`)
+  workspace jobs passed frozen install, format, lint, typecheck, tests, and build. Native Windows
+  x64 (`105483762024`) passed SEA construction and no-Node smoke, locked Rust format/check/strict
+  Clippy/tests (14 tests), NSIS packaging, outside-checkout installed-app smoke, lockfile check,
+  and unsigned artifact upload (`10532157028`). All jobs in run `35307647225` succeeded.
+
+Remaining:
+
+- Non-failing hosted warnings concern deprecated Node 20-based Actions, unsigned binaries, and
+  the known updater/bundle-type warning. The queued pre-authorization cancellation edge remains
+  a separate follow-up; no Iteration 7 work has started.
+
+Next safe step:
+
+- Commit and push this journal-only CI checkpoint without amending the tested 6D commit, then
+  reassess the remaining Iteration 6 acceptance scope before starting any new product work.
