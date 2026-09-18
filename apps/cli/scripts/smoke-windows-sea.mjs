@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -84,6 +84,67 @@ function createRepository(name, exitCode, policy) {
     'smoke fixture',
   );
   return repository;
+}
+
+function createApprovedPlanRepository(name, cancellation = false) {
+  const repository = join(smokeRoot, `repository approved ${name}`);
+  mkdirSync(join(repository, '.verify'), { recursive: true });
+  writeFileSync(join(repository, 'README.md'), `# approved ${name}\n`);
+  if (cancellation) {
+    writeFileSync(
+      join(repository, '.verify', 'approved-slow.cmd'),
+      '@echo SMART_SLOW_READY\r\n@"%SystemRoot%\\System32\\PING.EXE" -t 127.0.0.1 >nul\r\n',
+    );
+  }
+  const policy = [
+    'version: 2',
+    'project:',
+    `  name: smoke-approved-${name}`,
+    'suites:',
+    ...(cancellation
+      ? [
+          '  slow:',
+          '    type: test',
+          '    command: \'cmd.exe /d /s /c ".verify\\approved-slow.cmd"\'',
+          '    failure_policy: block',
+          '  later:',
+          '    type: lint',
+          '    command: \'cmd.exe /d /s /c "echo UNEXPECTED_LATER_CHECK"\'',
+          '    failure_policy: block',
+        ]
+      : [
+          '  quick:',
+          '    type: test',
+          '    command: \'cmd.exe /d /s /c "echo SMART_QUICK_READY"\'',
+          '    failure_policy: block',
+          '  full:',
+          '    type: build',
+          '    command: \'cmd.exe /d /s /c "echo SMART_FULL_READY"\'',
+          '    failure_policy: block',
+        ]),
+    'plans:',
+    cancellation ? '  quick: { suites: [slow, later] }' : '  quick: { suites: [quick] }',
+    cancellation ? '  full: { suites: [slow, later] }' : '  full: { suites: [quick, full] }',
+    'launch_targets: {}',
+    'discovery: { exclusions: [] }',
+    'overrides: {}',
+    '',
+  ].join('\n');
+  writeFileSync(join(repository, '.verify', 'project.yml'), policy);
+  git(repository, 'init', '--initial-branch=main', '--quiet');
+  git(repository, 'add', '.');
+  git(
+    repository,
+    '-c',
+    'user.name=Verifier Smoke',
+    '-c',
+    'user.email=verifier@example.invalid',
+    'commit',
+    '--quiet',
+    '-m',
+    'smoke fixture',
+  );
+  return { repository, policy };
 }
 
 const commandTrap = 'cmd.exe /d /s /c "echo unexpected>PROFILE_COMMAND_EXECUTED"';
@@ -367,6 +428,131 @@ function run(args, expectedCode, input) {
   return result.stdout;
 }
 
+function assertApprovalUnavailable(repository, mode) {
+  const rejected = JSON.parse(run([mode, repository, '--json'], 2));
+  if (rejected.error?.code !== 'APPROVAL_UNAVAILABLE') {
+    throw new Error(`Unapproved ${mode} verification was not rejected before execution.`);
+  }
+}
+
+function historyFor(repository) {
+  return JSON.parse(run(['history', repository, '--json'], 0));
+}
+
+async function assertApprovedCancellation(repository) {
+  const runId = 'outside-checkout-approved-cancel';
+  const cancelId = 'outside-checkout-approved-cancel-control';
+  const child = spawn(engine, ['protocol'], {
+    cwd: launchDir,
+    env: environment,
+    windowsHide: true,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  const frames = [];
+  let stdoutBuffer = '';
+  let stderr = '';
+  let cancelSent = false;
+  let parseError;
+
+  const exitCode = await new Promise((resolveExit, rejectExit) => {
+    const timeout = setTimeout(() => {
+      child.kill();
+      rejectExit(
+        new Error(
+          `Timed out waiting for approved verification cancellation. cancelSent=${String(cancelSent)}; stderr=${stderr}; frames=${JSON.stringify(frames)}`,
+        ),
+      );
+    }, 40_000);
+    child.on('error', (error) => {
+      clearTimeout(timeout);
+      rejectExit(error);
+    });
+    child.stdin.on('error', () => undefined);
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.stdout.on('data', (chunk) => {
+      stdoutBuffer += chunk.toString();
+      let boundary = stdoutBuffer.indexOf('\n');
+      while (boundary !== -1) {
+        const line = stdoutBuffer.slice(0, boundary).trim();
+        stdoutBuffer = stdoutBuffer.slice(boundary + 1);
+        if (line) {
+          try {
+            const frame = JSON.parse(line);
+            frames.push(frame);
+            if (
+              !cancelSent &&
+              frame.id === runId &&
+              frame.event === 'check.output' &&
+              frame.data?.chunk?.includes('SMART_SLOW_READY')
+            ) {
+              cancelSent = true;
+              child.stdin.end(
+                `${JSON.stringify({
+                  protocolVersion: 1,
+                  id: cancelId,
+                  method: 'verification.cancel',
+                  params: { targetRequestId: runId },
+                })}\n`,
+              );
+            }
+          } catch (error) {
+            parseError = error;
+            child.kill();
+          }
+        }
+        boundary = stdoutBuffer.indexOf('\n');
+      }
+    });
+    child.on('close', (code) => {
+      clearTimeout(timeout);
+      if (parseError) rejectExit(parseError);
+      else resolveExit(code);
+    });
+    child.stdin.write(
+      `${JSON.stringify({
+        protocolVersion: 1,
+        id: runId,
+        method: 'verification.plan.run',
+        params: { repository, mode: 'quick' },
+      })}\n`,
+    );
+  });
+
+  if (exitCode !== 0 || stderr !== '' || !cancelSent) {
+    throw new Error(
+      `Approved cancellation protocol failed (${String(exitCode)}). stderr: ${stderr}; frames: ${JSON.stringify(frames)}`,
+    );
+  }
+  const acknowledgement = frames.find((frame) => frame.id === cancelId && 'result' in frame);
+  const terminals = frames.filter((frame) => frame.id === runId && 'result' in frame);
+  const completed = frames.find((frame) => frame.id === runId && frame.event === 'run.completed');
+  const cancelled = terminals[0]?.result;
+  if (
+    acknowledgement?.result?.accepted !== true ||
+    terminals.length !== 1 ||
+    cancelled?.status !== 'cancelled' ||
+    cancelled.gate?.status !== 'BLOCK' ||
+    cancelled.checks?.[0]?.id !== 'slow' ||
+    cancelled.checks[0].status !== 'cancelled' ||
+    completed?.data?.run?.id !== cancelled.id ||
+    frames.some(
+      (frame) =>
+        frame.id === runId && frame.event === 'check.started' && frame.data?.check?.id === 'later',
+    )
+  ) {
+    throw new Error(
+      `Approved verification cancellation was not persisted correctly: ${JSON.stringify(frames)}`,
+    );
+  }
+  if (
+    !historyFor(repository).some((run) => run.id === cancelled.id && run.status === 'cancelled')
+  ) {
+    throw new Error('Approved cancelled run was not available in a fresh engine history process.');
+  }
+}
+
 try {
   mkdirSync(installDir, { recursive: true });
   mkdirSync(launchDir, { recursive: true });
@@ -479,6 +665,74 @@ try {
     throw new Error('Persisted PASS history was unavailable to a fresh engine process.');
   }
 
+  const approved = createApprovedPlanRepository('modes');
+  assertApprovalUnavailable(approved.repository, 'quick');
+  if (historyFor(approved.repository).length !== 0) {
+    throw new Error('Unapproved plan execution created run history.');
+  }
+  const approval = JSON.parse(
+    run(['config', 'approval', 'status', approved.repository, '--json'], 0),
+  );
+  if (approval.status !== 'not-approved' || !approval.policyDigest) {
+    throw new Error('The approved-plan fixture did not begin unapproved.');
+  }
+  run(
+    [
+      'config',
+      'approval',
+      'approve',
+      approved.repository,
+      '--expected-digest',
+      approval.policyDigest,
+      '--json',
+    ],
+    0,
+  );
+  const quick = JSON.parse(run(['quick', approved.repository, '--json'], 0));
+  const full = JSON.parse(run(['full', approved.repository, '--json'], 0));
+  if (
+    JSON.stringify(quick.checks?.map((check) => check.id)) !== JSON.stringify(['quick']) ||
+    JSON.stringify(full.checks?.map((check) => check.id)) !== JSON.stringify(['quick', 'full']) ||
+    quick.gate?.status !== 'PASS' ||
+    full.gate?.status !== 'PASS' ||
+    !quick.checks[0]?.stdout?.includes('SMART_QUICK_READY') ||
+    !full.checks[1]?.stdout?.includes('SMART_FULL_READY') ||
+    historyFor(approved.repository).length !== 2
+  ) {
+    throw new Error('Approved Quick/Full selection, evidence, gate, or persisted history failed.');
+  }
+  const policyPath = join(approved.repository, '.verify', 'project.yml');
+  const changed = approved.policy.replace('SMART_FULL_READY', 'UNAPPROVED_EXECUTED');
+  writeFileSync(policyPath, changed);
+  assertApprovalUnavailable(approved.repository, 'quick');
+  if (historyFor(approved.repository).length !== 2) {
+    throw new Error('A stale approval created a verification run.');
+  }
+  writeFileSync(policyPath, approved.policy);
+  run(['config', 'approval', 'revoke', approved.repository, '--json'], 0);
+  assertApprovalUnavailable(approved.repository, 'full');
+  if (historyFor(approved.repository).length !== 2) {
+    throw new Error('A revoked approval created a verification run.');
+  }
+
+  const cancellable = createApprovedPlanRepository('cancellable', true);
+  const cancellableApproval = JSON.parse(
+    run(['config', 'approval', 'status', cancellable.repository, '--json'], 0),
+  );
+  run(
+    [
+      'config',
+      'approval',
+      'approve',
+      cancellable.repository,
+      '--expected-digest',
+      cancellableApproval.policyDigest,
+      '--json',
+    ],
+    0,
+  );
+  await assertApprovedCancellation(cancellable.repository);
+
   const id = 'outside-checkout-protocol-smoke';
   const protocol = run(
     ['protocol'],
@@ -498,7 +752,7 @@ try {
   }
 
   process.stdout.write(
-    `Windows engine smoke passed for ${engine}: eight-profile matrix/cancellation, no profile writes or command execution, PASS/WARN/BLOCK, history, protocol argv, and no Node.js on PATH.\n`,
+    `Windows engine smoke passed for ${engine}: eight-profile matrix/cancellation, approved Quick/Full and fail-closed approval, approved-run cancellation, PASS/WARN/BLOCK, history, protocol argv, and no Node.js on PATH.\n`,
   );
 } finally {
   rmSync(smokeRoot, { recursive: true, force: true });

@@ -255,6 +255,267 @@ describe('desktop dashboard', () => {
     expect(within(approval).getByRole('button', { name: 'Approve Current Policy' })).toBeEnabled();
     expect(request.mock.calls.some(([method]) => method === 'config.approval.approve')).toBe(false);
     expect(request.mock.calls.some(([method]) => method === 'verification.run')).toBe(false);
+    expect(request.mock.calls.some(([method]) => method === 'verification.plan.run')).toBe(false);
+  });
+
+  it('keeps approved Quick and Full actions unavailable until policy approval is explicit', async () => {
+    const user = userEvent.setup();
+    const client = createMockEngineClient({ latencyMs: 0, initialPolicyVersion: 2 });
+    const request = vi.spyOn(client, 'request');
+    render(
+      <App
+        client={client}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\not-approved-smart-actions"
+      />,
+    );
+
+    const actions = await screen.findByRole('region', { name: 'Approved verification' });
+    expect(
+      await within(actions).findByText(/Review and approve the current executable policy/u),
+    ).toBeInTheDocument();
+    expect(
+      within(actions).getByRole('button', { name: 'Verify Changes / Quick Verification' }),
+    ).toBeDisabled();
+    expect(within(actions).getByRole('button', { name: 'Full Verification' })).toBeDisabled();
+    expect(request.mock.calls.some(([method]) => method === 'verification.plan.run')).toBe(false);
+
+    const approval = screen.getByRole('region', { name: 'Executable Policy Approval' });
+    await user.click(within(approval).getByRole('button', { name: 'Approve Current Policy' }));
+    expect(await within(approval).findByText('Approved')).toBeInTheDocument();
+    expect(
+      within(actions).getByRole('button', { name: 'Verify Changes / Quick Verification' }),
+    ).toBeEnabled();
+  });
+
+  it('runs approved Quick and Full modes through the existing verification result path', async () => {
+    const user = userEvent.setup();
+    const repository = 'C:\\work\\approved-modes';
+    const client = createMockEngineClient({
+      latencyMs: 0,
+      initialPolicyVersion: 2,
+      initialApprovalStatus: 'approved',
+    });
+    const request = vi.spyOn(client, 'request');
+    render(
+      <App client={client} pickRepository={async () => null} initialRepository={repository} />,
+    );
+
+    const actions = await screen.findByRole('region', { name: 'Approved verification' });
+    const quick = within(actions).getByRole('button', {
+      name: 'Verify Changes / Quick Verification',
+    });
+    await waitFor(() => expect(quick).toBeEnabled());
+    await user.click(quick);
+    expect(
+      await screen.findByText('Verification completed. Quality gate PASS.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Verification run' })).toHaveTextContent(
+      'Unit tests',
+    );
+    expect(screen.getByRole('region', { name: 'Verification run' })).toHaveTextContent('Lint');
+    expect(screen.getByRole('region', { name: 'Verification run' })).not.toHaveTextContent(
+      'Type check',
+    );
+    expect(request.mock.calls.find(([method]) => method === 'verification.plan.run')?.[1]).toEqual({
+      repository,
+      mode: 'quick',
+    });
+
+    await user.click(within(actions).getByRole('button', { name: 'Full Verification' }));
+    expect(
+      await screen.findByText('Verification completed. Quality gate PASS.'),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole('region', { name: 'Verification run' })).toHaveTextContent(
+        'Type check',
+      ),
+    );
+    expect(
+      request.mock.calls.filter(([method]) => method === 'verification.plan.run').at(-1)?.[1],
+    ).toEqual({
+      repository,
+      mode: 'full',
+    });
+    expect(request.mock.calls.some(([method]) => method === 'verification.run')).toBe(false);
+    expect(
+      request.mock.calls.filter(([method]) => method === 'config.approval.status').length,
+    ).toBeGreaterThanOrEqual(3);
+  });
+
+  it('keeps approved actions disabled until a completed run finishes refreshing gate and history', async () => {
+    const user = userEvent.setup();
+    let releaseRefresh: () => void = () => undefined;
+    const refreshBarrier = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+    const client = createMockEngineClient({
+      latencyMs: 0,
+      initialPolicyVersion: 2,
+      initialApprovalStatus: 'approved',
+      verificationRefreshBarrier: refreshBarrier,
+    });
+    const request = vi.spyOn(client, 'request');
+    render(
+      <App
+        client={client}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\approved-refresh-boundary"
+      />,
+    );
+
+    const actions = await screen.findByRole('region', { name: 'Approved verification' });
+    const quick = within(actions).getByRole('button', {
+      name: 'Verify Changes / Quick Verification',
+    });
+    const full = within(actions).getByRole('button', { name: 'Full Verification' });
+    await waitFor(() => expect(quick).toBeEnabled());
+    await user.click(quick);
+    try {
+      await waitFor(() =>
+        expect(
+          request.mock.calls.filter(([method]) => method === 'gate.latest').length,
+        ).toBeGreaterThanOrEqual(2),
+      );
+      expect(full).toBeDisabled();
+      expect(
+        request.mock.calls.filter(([method]) => method === 'verification.plan.run'),
+      ).toHaveLength(1);
+    } finally {
+      releaseRefresh();
+    }
+
+    await waitFor(() => expect(full).toBeEnabled());
+    await user.click(full);
+    await waitFor(() =>
+      expect(
+        request.mock.calls.filter(([method]) => method === 'verification.plan.run'),
+      ).toHaveLength(2),
+    );
+  });
+
+  it('allows a repository opened through a nested path when approval names its canonical root', async () => {
+    const user = userEvent.setup();
+    const repository = 'C:\\work\\canonical-root\\packages\\app';
+    const client = createMockEngineClient({
+      latencyMs: 0,
+      initialPolicyVersion: 2,
+      initialApprovalStatus: 'approved',
+      approvalCanonicalRoot: 'C:\\work\\canonical-root',
+    });
+    const request = vi.spyOn(client, 'request');
+    render(
+      <App client={client} pickRepository={async () => null} initialRepository={repository} />,
+    );
+
+    const actions = await screen.findByRole('region', { name: 'Approved verification' });
+    const quick = within(actions).getByRole('button', {
+      name: 'Verify Changes / Quick Verification',
+    });
+    await waitFor(() => expect(quick).toBeEnabled());
+    await user.click(quick);
+
+    expect(
+      await screen.findByText('Verification completed. Quality gate PASS.'),
+    ).toBeInTheDocument();
+    expect(request.mock.calls.find(([method]) => method === 'verification.plan.run')?.[1]).toEqual({
+      repository,
+      mode: 'quick',
+    });
+  });
+
+  it('rechecks approval and does not start a smart run when policy becomes outdated', async () => {
+    const user = userEvent.setup();
+    const client = createMockEngineClient({
+      latencyMs: 0,
+      initialPolicyVersion: 2,
+      initialApprovalStatus: 'approved',
+      outdateApprovalAfterStatusReads: 2,
+    });
+    const request = vi.spyOn(client, 'request');
+    render(
+      <App
+        client={client}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\changed-after-approval"
+      />,
+    );
+    const actions = await screen.findByRole('region', { name: 'Approved verification' });
+    await user.click(await within(actions).findByRole('button', { name: 'Full Verification' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('not currently approved');
+    expect(actions).toHaveTextContent('Approval is outdated');
+    expect(within(actions).getByRole('button', { name: 'Full Verification' })).toBeDisabled();
+    expect(request.mock.calls.some(([method]) => method === 'verification.plan.run')).toBe(false);
+  });
+
+  it('stops an approved Quick run through the existing verification cancellation path', async () => {
+    const user = userEvent.setup();
+    let acknowledgeCancellation: () => void = () => undefined;
+    const cancellationAcknowledgement = new Promise<void>((resolve) => {
+      acknowledgeCancellation = resolve;
+    });
+    const client = createMockEngineClient({
+      latencyMs: 0,
+      initialPolicyVersion: 2,
+      initialApprovalStatus: 'approved',
+      verificationCheckLatencyMs: 10_000,
+      verificationCancellationBarrier: cancellationAcknowledgement,
+    });
+    const request = vi.spyOn(client, 'request');
+    render(
+      <App
+        client={client}
+        pickRepository={async () => null}
+        initialRepository="C:\\work\\cancel-approved-quick"
+      />,
+    );
+
+    const actions = await screen.findByRole('region', { name: 'Approved verification' });
+    await user.click(
+      await within(actions).findByRole('button', { name: 'Verify Changes / Quick Verification' }),
+    );
+    expect(await screen.findByRole('heading', { name: 'Collecting evidence' })).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Stop run' }));
+    expect(screen.getByRole('button', { name: 'Stopping…' })).toBeDisabled();
+    acknowledgeCancellation();
+    expect(await screen.findByText('Verification interrupted and saved.')).toBeInTheDocument();
+    expect(screen.getByText('Quality gate: BLOCK')).toBeInTheDocument();
+    expect(
+      request.mock.calls.find(([method]) => method === 'verification.plan.run')?.[1],
+    ).toMatchObject({
+      mode: 'quick',
+    });
+  });
+
+  it('cannot start a smart run for a repository replaced during approval recheck', async () => {
+    const user = userEvent.setup();
+    const client = createMockEngineClient({
+      latencyMs: 80,
+      initialPolicyVersion: 2,
+      initialApprovalStatus: 'approved',
+    });
+    const request = vi.spyOn(client, 'request');
+    render(
+      <App
+        client={client}
+        pickRepository={async () => 'C:\\work\\new-smart-repository'}
+        initialRepository="C:\\work\\old-smart-repository"
+      />,
+    );
+
+    const actions = await screen.findByRole('region', { name: 'Approved verification' });
+    await user.click(await within(actions).findByRole('button', { name: 'Full Verification' }));
+    await user.keyboard('{Control>}o{/Control}');
+    expect(
+      await screen.findByRole('heading', { name: 'new-smart-repository' }),
+    ).toBeInTheDocument();
+    expect(request.mock.calls.some(([method]) => method === 'verification.plan.run')).toBe(false);
+    await waitFor(() =>
+      expect(screen.getByRole('region', { name: 'Executable Policy Approval' })).toHaveTextContent(
+        'new-smart-repository',
+      ),
+    );
   });
 
   it('explicitly approves the reviewed digest and revokes without running a command', async () => {

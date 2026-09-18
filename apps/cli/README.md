@@ -19,6 +19,8 @@ pnpm verify config approval approve [repository] --expected-digest <policy-diges
 pnpm verify config approval revoke [repository] [--json]
 pnpm verify inspect [repository] [--json]
 pnpm verify run [repository] [--json]
+pnpm verify quick [repository] [--json]
+pnpm verify full [repository] [--json]
 pnpm verify gate [repository] [--json]
 pnpm verify history [repository] [--limit 20] [--json]
 pnpm verify protocol
@@ -57,6 +59,13 @@ policy edits make an old approval outdated. These commands do not execute a plan
 Missing, invalid, or version-1 policies reject approval with `APPROVAL_UNAVAILABLE`; a local
 receipt can still be revoked while the policy is unavailable.
 
+`quick` and `full` execute only their named suites from a freshly read schema-v2 policy after core
+revalidates the matching local approval receipt. Missing, stale, revoked, version-1, or invalid
+policy fails before any project command starts. These commands reuse the existing verification
+runner, cancellation, persisted history, PASS/WARN/BLOCK gate, and CLI exit-code meanings; `run`
+retains its legacy configured-suite behavior. `--json` emits one `VerificationRun` without progress
+noise.
+
 ## Allowed dependencies
 
 Core and every concrete local adapter needed by the composition root, protocol/config/domain types,
@@ -79,7 +88,7 @@ remain owned by their packages.
 - JSON mode emits exactly one machine-readable document on stdout without progress noise.
 - Protocol mode reserves stdout for validated NDJSON frames and sends diagnostics to stderr.
 - Protocol mode keeps reading while ordinary requests execute, serializes those requests, and lets
-  `verification.cancel` interrupt an active or queued verification run and `operation.cancel`
+  `verification.cancel` interrupt an active or queued legacy or approved verification run and `operation.cancel`
   interrupt a registered profiling or plan-preview operation.
 - The CLI and protocol call the same `VerifierApplication` instance and do not recalculate gates.
 - `init` never replaces an existing file without `--force`.

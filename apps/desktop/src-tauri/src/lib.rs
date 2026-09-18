@@ -337,6 +337,7 @@ impl CancellableRequest {
     fn from_method(method: &str) -> Option<Self> {
         match method {
             "verification.run" => Some(Self::VerificationRun),
+            "verification.plan.run" => Some(Self::VerificationRun),
             "project.profile" => Some(Self::ProjectProfile),
             "verification.plan" => Some(Self::VerificationPlan),
             _ => None,
@@ -1162,9 +1163,45 @@ mod tests {
     }
 
     #[test]
+    fn approved_plan_execution_uses_verification_cancellation_and_persisted_terminal_rules() {
+        let request = CancellableRequest::from_method("verification.plan.run");
+        assert_eq!(request, Some(CancellableRequest::VerificationRun));
+
+        let encoded = encode_cancellation_request("cancel-plan", "plan-run", request.unwrap())
+            .expect("encode correlated cancellation");
+        let value: Value = serde_json::from_str(&encoded).expect("decode cancellation frame");
+        assert_eq!(value["method"], "verification.cancel");
+        assert_eq!(value["params"]["targetRequestId"], "plan-run");
+
+        let accepted = ProtocolStreamState {
+            cancellation_acknowledged: Some(true),
+            ..ProtocolStreamState::default()
+        };
+        assert!(accepted
+            .validate_cancellation(
+                r#"{"protocolVersion":1,"id":"plan-run","result":{"status":"completed"}}"#,
+                true,
+                request,
+            )
+            .unwrap_err()
+            .contains("did not return a persisted cancelled run"));
+        accepted
+            .validate_cancellation(
+                r#"{"protocolVersion":1,"id":"plan-run","result":{"status":"cancelled"}}"#,
+                true,
+                request,
+            )
+            .expect("persisted cancelled plan run is the valid terminal state");
+    }
+
+    #[test]
     fn only_supported_long_running_requests_are_cancellable() {
         assert_eq!(
             CancellableRequest::from_method("verification.run"),
+            Some(CancellableRequest::VerificationRun)
+        );
+        assert_eq!(
+            CancellableRequest::from_method("verification.plan.run"),
             Some(CancellableRequest::VerificationRun)
         );
         assert_eq!(

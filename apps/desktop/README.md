@@ -19,6 +19,8 @@ evaluates a gate, or persists results.
   a changed source revision is reported as a conflict rather than overwritten.
 - Review the current schema-v2 executable policy and local approval status; explicitly approve the
   displayed policy digest or revoke approval without running a project command.
+- Run approved Quick or Full named suites through the same verification core after a fresh
+  execution-time policy/receipt check; unavailable approval never starts a smart run.
 - Review branch, changed files, configured checks, current gate, live progress, and run history.
 - Initialize `.verify/project.yml`, run verification, interrupt an active request, and open the
   repository with keyboard-accessible controls.
@@ -59,7 +61,10 @@ The approval view uses additive `config.approval.status`, `config.approval.appro
 executable command/suite review snapshot produced from the same validated policy read as its
 digest. An explicit Approve action submits that digest as a stale-review guard; Revoke is also
 explicit. The engine owns digest calculation and local SQLite receipt persistence. The desktop
-never treats migration as approval and offers no smart-plan execution action in this slice.
+never treats migration as approval. Quick and Full buttons use the additive
+`verification.plan.run` method and existing verification progress, Stop, gate, and history views.
+Rust and React do not choose suites or decide authorization; core rereads current policy and
+receipt immediately before running.
 
 `pnpm --filter @verify/desktop dev` runs a browser-only visual preview with deterministic mock data;
 query parameters `?scenario=WARN`, `?scenario=BLOCK`, and `?uninitialized=1` exercise major states.

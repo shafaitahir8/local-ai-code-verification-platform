@@ -54,6 +54,7 @@ owned by its source package.
 - `config.approval.revoke`
 - `repository.inspect`
 - `verification.run`
+- `verification.plan.run`
 - `verification.cancel`
 - `operation.cancel`
 - `gate.latest`
@@ -87,8 +88,16 @@ return the same normalized status model; none executes a check or changes a qual
 Missing, invalid, or version-1 policies reject approval with `APPROVAL_UNAVAILABLE`; an active
 receipt can still be revoked when the policy is unavailable.
 
+`verification.plan.run` requires `{ repository, mode: "quick" | "full" }`. Core rereads the
+current schema-v2 policy and local approval before executing only that mode's named suites. Missing,
+outdated, or revoked approval and missing, invalid, or version-1 policy fail closed with
+`APPROVAL_UNAVAILABLE`; invalid or unresolved mode membership fails with `CONFIG_ERROR`. Successful
+execution streams the existing check and
+`run.completed` events and returns the same persisted `VerificationRun` result as `verification.run`.
+The legacy `verification.run` request and result remain unchanged.
+
 `verification.cancel` is an additive version 1 control request. It has its own request ID and names
-the active `verification.run` request in `params.targetRequestId`. Its terminal result is
+the active `verification.run` or `verification.plan.run` request in `params.targetRequestId`. Its terminal result is
 `{ "accepted": true }` only when that run accepted its first cancellation request; unknown,
 already-cancelled, and completed targets return `false`.
 

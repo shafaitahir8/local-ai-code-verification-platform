@@ -249,6 +249,7 @@ export const protocolParamsSchemas = {
   'config.approval.revoke': repositoryParamsSchema,
   'repository.inspect': repositoryParamsSchema,
   'verification.run': repositoryParamsSchema,
+  'verification.plan.run': repositoryParamsSchema.extend({ mode: z.enum(['quick', 'full']) }),
   'verification.cancel': z.strictObject({ targetRequestId: requestIdSchema }),
   'operation.cancel': z.strictObject({ targetRequestId: requestIdSchema }),
   'gate.latest': repositoryParamsSchema,
@@ -280,6 +281,7 @@ export const protocolResultSchemas = {
   'config.approval.revoke': policyApprovalStatusSchema,
   'repository.inspect': repositoryChangeSchema,
   'verification.run': verificationRunSchema,
+  'verification.plan.run': verificationRunSchema,
   'verification.cancel': z.strictObject({ accepted: z.boolean() }),
   'operation.cancel': z.strictObject({ accepted: z.boolean() }),
   'gate.latest': z

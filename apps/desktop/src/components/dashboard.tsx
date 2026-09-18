@@ -1,4 +1,5 @@
 import type { DashboardController } from '../dashboard/use-dashboard.js';
+import { ApprovedVerificationActions } from './approved-verification-actions.js';
 import { ChangePanel } from './change-panel.js';
 import { ChecksPanel } from './checks-panel.js';
 import { ConfigMigrationCard } from './config-migration.js';
@@ -36,6 +37,16 @@ export function Dashboard({ controller }: { readonly controller: DashboardContro
           profileError={controller.profileError}
           onRefresh={() => void controller.understandProject()}
           onStop={controller.stopProjectProfile}
+        />
+      </div>
+      <div className="dashboard-grid__wide">
+        <ApprovedVerificationActions
+          approval={controller.approval}
+          approvalPhase={controller.approvalPhase}
+          runPhase={controller.runPhase}
+          viewingHistory={Boolean(controller.selectedHistoryId)}
+          onRunQuick={() => void controller.runApprovedVerification('quick')}
+          onRunFull={() => void controller.runApprovedVerification('full')}
         />
       </div>
       <div className="dashboard-grid__wide">

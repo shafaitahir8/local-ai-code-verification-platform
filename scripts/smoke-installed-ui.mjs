@@ -92,6 +92,37 @@ function createGateRepository(status, exitCode, failurePolicy) {
   return repository;
 }
 
+function createApprovedPlanRepository() {
+  const repository = join(smokeRoot, 'Approved Quick Full repository ü');
+  const policyPath = join(repository, '.verify', 'project.yml');
+  mkdirSync(dirname(policyPath), { recursive: true });
+  writeFileSync(join(repository, 'README.md'), '# Installed approved-plan smoke\n');
+  const policy = [
+    'version: 2',
+    'project:',
+    '  name: installed-ui-approved-plan',
+    'suites:',
+    '  quick:',
+    '    type: test',
+    '    command: \'cmd.exe /d /s /c "echo UI_APPROVED_QUICK_READY"\'',
+    '    failure_policy: block',
+    '  full:',
+    '    type: build',
+    '    command: \'cmd.exe /d /s /c "echo UI_APPROVED_FULL_READY"\'',
+    '    failure_policy: block',
+    'plans:',
+    '  quick: { suites: [quick] }',
+    '  full: { suites: [quick, full] }',
+    'launch_targets: {}',
+    'discovery: { exclusions: [] }',
+    'overrides: {}',
+    '',
+  ].join('\n');
+  writeFileSync(policyPath, policy);
+  initializeRepository(repository);
+  return { repository, policyPath, policy };
+}
+
 const observedCommandTrap =
   'cmd.exe /d /s /c "echo unexpected>profiling-command-executed.marker & exit 91"';
 
@@ -301,8 +332,11 @@ function createProfileFixtures() {
   }));
 }
 
-function createCancellationRepository() {
-  const repository = join(smokeRoot, 'Cancellation repository ü');
+function createCancellationRepository(approved = false) {
+  const repository = join(
+    smokeRoot,
+    approved ? 'Approved cancellation repository ü' : 'Cancellation repository ü',
+  );
   const verifyDirectory = join(repository, '.verify');
   mkdirSync(verifyDirectory, { recursive: true });
   writeFileSync(join(repository, 'README.md'), '# Installed cancellation smoke\n');
@@ -322,14 +356,24 @@ function createCancellationRepository() {
   writeFileSync(
     join(verifyDirectory, 'project.yml'),
     [
-      'version: 1',
+      `version: ${approved ? 2 : 1}`,
       'project:',
-      '  name: installed-ui-cancel',
+      `  name: installed-ui-${approved ? 'approved-cancel' : 'cancel'}`,
       'suites:',
       '  slow:',
       '    type: test',
       `    command: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".verify/slow-check.ps1"'`,
       '    failure_policy: block',
+      ...(approved
+        ? [
+            'plans:',
+            '  quick: { suites: [slow] }',
+            '  full: { suites: [slow] }',
+            'launch_targets: {}',
+            'discovery: { exclusions: [] }',
+            'overrides: {}',
+          ]
+        : []),
       '',
     ].join('\n'),
   );
@@ -521,6 +565,22 @@ function repositoryReadyExpression(repository) {
     );
     return input?.value === ${path} && Boolean(run);
   })()`;
+}
+
+function buttonStateExpression(label, enabled) {
+  const expected = JSON.stringify(label);
+  return `(() => {
+    const normalize = (value) => value.replace(/\\s+/gu, ' ').trim();
+    const button = [...document.querySelectorAll('button')].find(
+      (candidate) => normalize(candidate.textContent ?? '').includes(${expected}),
+    );
+    return Boolean(button) && button.disabled === ${!enabled};
+  })()`;
+}
+
+function approvalStatusExpression(label) {
+  const expected = JSON.stringify(label);
+  return `document.querySelector('.approval-status')?.textContent?.trim() === ${expected}`;
 }
 
 function projectProfileReadyExpression(fixture, status = 'Profile ready') {
@@ -800,6 +860,15 @@ async function waitForProcessesToExit(processIds) {
 }
 
 function readPersistedCancellation(repository) {
+  const runs = readPersistedRuns(repository);
+  const cancelled = runs.find((run) => run.status === 'cancelled');
+  if (cancelled?.gate?.status !== 'BLOCK' || cancelled.checks?.[0]?.status !== 'cancelled') {
+    throw new Error('Installed UI cancellation was not persisted as a cancelled BLOCK run.');
+  }
+  return cancelled;
+}
+
+function readPersistedRuns(repository) {
   const result = spawnSync(engine, ['history', repository, '--json'], {
     cwd: smokeRoot,
     env: process.env,
@@ -812,12 +881,145 @@ function readPersistedCancellation(repository) {
       `Installed engine history failed (${String(result.status)}).\nstdout: ${result.stdout}\nstderr: ${result.stderr}`,
     );
   }
-  const runs = JSON.parse(result.stdout);
-  const cancelled = runs.find((run) => run.status === 'cancelled');
-  if (cancelled?.gate?.status !== 'BLOCK' || cancelled.checks?.[0]?.status !== 'cancelled') {
-    throw new Error('Installed UI cancellation was not persisted as a cancelled BLOCK run.');
+  return JSON.parse(result.stdout);
+}
+
+function assertPersistedCheckSelection(run, expectedIds, expectedOutput) {
+  const actualIds = run?.checks?.map((check) => check.id);
+  if (JSON.stringify(actualIds) !== JSON.stringify(expectedIds)) {
+    throw new Error(
+      `Approved verification selected ${JSON.stringify(actualIds)} instead of ${JSON.stringify(expectedIds)}.`,
+    );
   }
-  return cancelled;
+  if (run.status !== 'completed' || run.gate?.status !== 'PASS') {
+    throw new Error('Approved verification did not persist a completed PASS run.');
+  }
+  const output = run.checks.map((check) => check.stdout ?? '').join('');
+  if (expectedOutput.some((marker) => !output.includes(marker))) {
+    throw new Error('Approved verification did not persist the expected command evidence.');
+  }
+}
+
+async function validateApprovedPlanExecution(client, fixture) {
+  const { repository, policyPath, policy } = fixture;
+  const unauthorizedMarker = join(repository, '.verify', 'unapproved-command.marker');
+  await setRepository(client, repository);
+  await clickButton(client, 'Inspect again');
+  await waitFor(
+    client,
+    repositoryReadyExpression(repository),
+    'the approved-plan repository to load',
+  );
+  await waitFor(
+    client,
+    approvalStatusExpression('Not approved'),
+    'the installed UI to require explicit approval',
+  );
+  await waitFor(
+    client,
+    buttonStateExpression('Verify Changes / Quick Verification', false),
+    'Quick Verification to remain disabled before approval',
+  );
+  if (readPersistedRuns(repository).length !== 0) {
+    throw new Error('Approved-plan fixture had run history before explicit approval.');
+  }
+
+  await clickButton(client, 'Approve Current Policy');
+  await waitFor(client, approvalStatusExpression('Approved'), 'explicit policy approval');
+  await waitFor(
+    client,
+    buttonStateExpression('Verify Changes / Quick Verification', true),
+    'approved Quick Verification to become available',
+  );
+  await clickButton(client, 'Verify Changes / Quick Verification');
+  await waitFor(
+    client,
+    'document.body.textContent.includes("Quality gate: PASS") && document.querySelector("[aria-label=\\"Verification output\\"]")?.textContent?.includes("UI_APPROVED_QUICK_READY")',
+    'approved Quick verification evidence and PASS gate',
+  );
+  await waitFor(
+    client,
+    buttonStateExpression('Full Verification', true),
+    'Full Verification to become available after Quick completes',
+  );
+  const quickRuns = readPersistedRuns(repository);
+  if (quickRuns.length !== 1) {
+    throw new Error(`Expected one approved Quick run; found ${quickRuns.length}.`);
+  }
+  assertPersistedCheckSelection(quickRuns[0], ['quick'], ['UI_APPROVED_QUICK_READY']);
+
+  await clickButton(client, 'Full Verification');
+  await waitFor(
+    client,
+    'document.body.textContent.includes("Quality gate: PASS") && document.querySelector("[aria-label=\\"Verification output\\"]")?.textContent?.includes("UI_APPROVED_FULL_READY")',
+    'approved Full verification evidence and PASS gate',
+  );
+  await waitFor(
+    client,
+    buttonStateExpression('Full Verification', true),
+    'Full Verification to finish',
+  );
+  const fullRuns = readPersistedRuns(repository);
+  if (fullRuns.length !== 2) {
+    throw new Error(`Expected separate Quick and Full history; found ${fullRuns.length} runs.`);
+  }
+  const fullRun = fullRuns.find((run) => run.id !== quickRuns[0].id);
+  assertPersistedCheckSelection(
+    fullRun,
+    ['quick', 'full'],
+    ['UI_APPROVED_QUICK_READY', 'UI_APPROVED_FULL_READY'],
+  );
+
+  const changedPolicy = policy.replace(
+    'echo UI_APPROVED_FULL_READY',
+    'echo UI_UNAPPROVED_EXECUTED>.verify/unapproved-command.marker',
+  );
+  if (changedPolicy === policy) throw new Error('Could not construct the stale-policy fixture.');
+  writeFileSync(policyPath, changedPolicy);
+  await clickButton(client, 'Verify Changes / Quick Verification');
+  await waitFor(
+    client,
+    approvalStatusExpression('Approval outdated because policy changed'),
+    'the installed UI to reject stale approval before execution',
+  );
+  await waitFor(
+    client,
+    buttonStateExpression('Verify Changes / Quick Verification', false),
+    'Quick Verification to be disabled after the policy change',
+  );
+  if (readPersistedRuns(repository).length !== 2 || existsSync(unauthorizedMarker)) {
+    throw new Error('A stale approval started a new run or executed the changed command.');
+  }
+
+  writeFileSync(policyPath, policy);
+  await clickButton(client, 'Refresh Approval Status');
+  await waitFor(client, approvalStatusExpression('Approved'), 'restored approved policy status');
+  await clickButton(client, 'Revoke Approval');
+  await waitFor(client, approvalStatusExpression('Approval revoked'), 'explicit revocation');
+  await waitFor(
+    client,
+    buttonStateExpression('Full Verification', false),
+    'Full Verification to be disabled after revocation',
+  );
+  if (
+    readPersistedRuns(repository).length !== 2 ||
+    existsSync(unauthorizedMarker) ||
+    cleanRepositoryStatus(repository) !== ''
+  ) {
+    throw new Error('Revoked approval changed run history, executed a command, or dirtied policy.');
+  }
+
+  return {
+    repository,
+    quickRunId: quickRuns[0].id,
+    fullRunId: fullRun.id,
+    quickSuites: ['quick'],
+    fullSuites: ['quick', 'full'],
+    persistedGate: 'PASS',
+    staleApproval: 'blocked before execution',
+    revokedApproval: 'disabled and no execution',
+    unauthorizedCommandMarker: 'absent',
+  };
 }
 
 const gateRepositories =
@@ -830,6 +1032,9 @@ const gateRepositories =
     : undefined;
 const profileFixtures = smokeMode === 'primary' ? createProfileFixtures() : undefined;
 const cancellationRepository = smokeMode === 'primary' ? createCancellationRepository() : undefined;
+const approvedPlanFixture = smokeMode === 'primary' ? createApprovedPlanRepository() : undefined;
+const approvedCancellationRepository =
+  smokeMode === 'primary' ? createCancellationRepository(true) : undefined;
 let client;
 
 try {
@@ -923,6 +1128,8 @@ try {
       );
     }
 
+    const approvedPlanResult = await validateApprovedPlanExecution(client, approvedPlanFixture);
+
     await setRepository(client, cancellationRepository);
     await clickButton(client, 'Inspect again');
     await waitFor(
@@ -967,6 +1174,61 @@ try {
     const cancelledRun = readPersistedCancellation(cancellationRepository);
     await waitForProcessesToExit(processIds);
 
+    await setRepository(client, approvedCancellationRepository);
+    await clickButton(client, 'Inspect again');
+    await waitFor(
+      client,
+      repositoryReadyExpression(approvedCancellationRepository),
+      'the approved cancellation repository to load',
+    );
+    await waitFor(
+      client,
+      approvalStatusExpression('Not approved'),
+      'the approved cancellation policy to require review',
+    );
+    await clickButton(client, 'Approve Current Policy');
+    await waitFor(client, approvalStatusExpression('Approved'), 'approved cancellation policy');
+    await clickButton(client, 'Verify Changes / Quick Verification');
+    await waitFor(
+      client,
+      'document.body.textContent.includes("TREE_READY") && document.body.textContent.includes("Stop run")',
+      'the approved cancellable process tree to start',
+    );
+    const approvedParentPidPath = join(
+      approvedCancellationRepository,
+      '.verify',
+      'command-parent.pid',
+    );
+    const approvedChildPidPath = join(
+      approvedCancellationRepository,
+      '.verify',
+      'command-child.pid',
+    );
+    if (!existsSync(approvedParentPidPath) || !existsSync(approvedChildPidPath)) {
+      throw new Error('The approved cancellable fixture did not record its process IDs.');
+    }
+    const approvedCommandProcessIds = [
+      readPid(approvedParentPidPath),
+      readPid(approvedChildPidPath),
+    ];
+    const approvedEngineProcessIds = findInstalledEngineProcessIds();
+    if (approvedEngineProcessIds.length !== 1) {
+      throw new Error('Expected one installed sidecar during approved cancellation.');
+    }
+    const approvedProcessIds = [...approvedCommandProcessIds, ...approvedEngineProcessIds];
+    if (!approvedProcessIds.every(isProcessAlive)) {
+      throw new Error('An approved verification process exited before cancellation.');
+    }
+    await clickButton(client, 'Stop run');
+    await waitFor(
+      client,
+      'document.body.textContent.includes("Verification interrupted and saved.") && document.body.textContent.includes("Quality gate: BLOCK")',
+      'persisted approved cancellation in the installed UI',
+      30_000,
+    );
+    const approvedCancelledRun = readPersistedCancellation(approvedCancellationRepository);
+    await waitForProcessesToExit(approvedProcessIds);
+
     const summary = {
       gateRepositories,
       cancellationRepository,
@@ -984,11 +1246,16 @@ try {
       recordedCommandProcessIds: commandProcessIds,
       recordedEngineProcessIds: engineProcessIds,
       orphanedRecordedProcesses: [],
+      approvedVerification: approvedPlanResult,
+      approvedCancelledRunId: approvedCancelledRun.id,
+      approvedCancellationGate: approvedCancelledRun.gate.status,
+      approvedCancellationProcessIds: approvedProcessIds,
+      orphanedApprovedProcesses: [],
       webviewTarget: page.url,
     };
     writeFileSync(join(smokeRoot, 'ui-summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
     process.stdout.write(
-      'Installed UI workflow smoke passed: profile matrix and refresh, native PASS/WARN/BLOCK, persisted cancellation, and no recorded child processes remain.\n',
+      'Installed UI workflow smoke passed: profile matrix, native PASS/WARN/BLOCK, approved Quick/Full with stale/revoked blocking, persisted legacy and approved cancellation, and no recorded child processes remain.\n',
     );
   }
 } catch (error) {

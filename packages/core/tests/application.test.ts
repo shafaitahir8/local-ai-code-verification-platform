@@ -4,7 +4,7 @@ import type {
   ProjectConfigV2,
   ProjectDiscovery,
 } from '@verify/config';
-import { ConfigValidationError } from '@verify/config';
+import { ConfigNotFoundError, ConfigValidationError } from '@verify/config';
 import type { ProjectProfileResult, RepositoryChange, VerificationRun } from '@verify/domain';
 import type { ApprovalReceipt } from '@verify/domain';
 import { describe, expect, it, vi } from 'vitest';
@@ -40,6 +40,15 @@ const migratedConfig: ProjectConfigV2 = {
   launch_targets: {},
   discovery: { exclusions: [] },
   overrides: {},
+};
+const executableConfig: ProjectConfigV2 = {
+  ...migratedConfig,
+  suites: {
+    lint: { type: 'lint', command: 'npm run lint', failure_policy: 'warn' },
+    test: { type: 'test', command: 'npm test', failure_policy: 'block' },
+    build: { type: 'build', command: 'npm run build', failure_policy: 'block' },
+  },
+  plans: { quick: { suites: ['lint', 'test'] }, full: { suites: ['lint', 'test', 'build'] } },
 };
 const sourceDigest = 'a'.repeat(64);
 const targetDigest = 'b'.repeat(64);
@@ -178,6 +187,158 @@ function dependencies() {
 }
 
 describe('VerifierApplication', () => {
+  it.each([
+    ['quick', ['lint', 'test']],
+    ['full', ['lint', 'test', 'build']],
+  ] as const)('executes only approved %s suites through the existing runner', async (mode, ids) => {
+    const ports = dependencies();
+    ports.configuration.loadPolicy = async () => executableConfig;
+    const execute = vi.spyOn(ports.verification, 'run');
+    const application = new VerifierApplication(ports);
+    const digest = (await application.getPolicyApprovalStatus(root)).policyDigest!;
+    await application.approveProjectPolicy({ repository: root, expectedPolicyDigest: digest });
+
+    const run = await application.runApprovedVerification({ repository: root, mode });
+
+    expect(execute).toHaveBeenCalledOnce();
+    expect(execute.mock.calls[0]?.[0].checks.map((suite) => suite.id)).toEqual(ids);
+    expect(execute.mock.calls[0]?.[0].checks.map((suite) => suite.command)).toEqual(
+      ids.map((id) => executableConfig.suites[id]!.command),
+    );
+    expect(run.gate?.status).toBe('PASS');
+    expect(ports.saved).toEqual([run]);
+    expect(await application.getRunHistory(root)).toEqual([run]);
+  });
+
+  it.each(['not-approved', 'revoked', 'outdated'] as const)(
+    'fails closed for %s without invoking the runner',
+    async (state) => {
+      const ports = dependencies();
+      let policy = executableConfig;
+      ports.configuration.loadPolicy = async () => policy;
+      const execute = vi.spyOn(ports.verification, 'run');
+      const save = vi.spyOn(ports.runs, 'saveRun');
+      const application = new VerifierApplication(ports);
+      if (state !== 'not-approved') {
+        const digest = (await application.getPolicyApprovalStatus(root)).policyDigest!;
+        await application.approveProjectPolicy({ repository: root, expectedPolicyDigest: digest });
+      }
+      if (state === 'revoked') await application.revokeProjectPolicyApproval(root);
+      if (state === 'outdated') {
+        policy = {
+          ...executableConfig,
+          suites: {
+            ...executableConfig.suites,
+            test: { ...executableConfig.suites.test!, command: 'npm test --changed' },
+          },
+        };
+      }
+
+      await expect(
+        application.runApprovedVerification({ repository: root, mode: 'quick' }),
+      ).rejects.toThrow(PolicyApprovalUnavailableError);
+      expect(execute).not.toHaveBeenCalled();
+      expect(save).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['missing', 'invalid', 'version-one', 'empty', 'unknown-suite'] as const)(
+    'does not execute with %s policy',
+    async (state) => {
+      const ports = dependencies();
+      const execute = vi.spyOn(ports.verification, 'run');
+      const save = vi.spyOn(ports.runs, 'saveRun');
+      if (state === 'missing') {
+        ports.configuration.loadPolicy = async () => {
+          throw new ConfigNotFoundError('/repo/.verify/project.yml');
+        };
+      } else if (state === 'invalid') {
+        ports.configuration.loadPolicy = async () => {
+          throw new ConfigValidationError([{ path: '$', message: 'invalid policy' }]);
+        };
+      } else if (state === 'version-one') {
+        ports.configuration.loadPolicy = async () => config;
+      } else {
+        ports.configuration.loadPolicy = async () => ({
+          ...executableConfig,
+          plans: {
+            ...executableConfig.plans,
+            quick: { suites: state === 'empty' ? [] : ['unknown'] },
+          },
+        });
+      }
+      const application = new VerifierApplication(ports);
+      if (state === 'empty') {
+        const digest = (await application.getPolicyApprovalStatus(root)).policyDigest!;
+        await application.approveProjectPolicy({ repository: root, expectedPolicyDigest: digest });
+      }
+      await expect(
+        application.runApprovedVerification({ repository: root, mode: 'quick' }),
+      ).rejects.toThrow(
+        state === 'empty' || state === 'unknown-suite'
+          ? ConfigValidationError
+          : PolicyApprovalUnavailableError,
+      );
+      expect(execute).not.toHaveBeenCalled();
+      expect(save).not.toHaveBeenCalled();
+    },
+  );
+
+  it('binds execution to the canonical repository and freshly loaded receipt', async () => {
+    const ports = dependencies();
+    ports.configuration.loadPolicy = async () => executableConfig;
+    const execute = vi.spyOn(ports.verification, 'run');
+    const application = new VerifierApplication(ports);
+    const digest = (await application.getPolicyApprovalStatus(root)).policyDigest!;
+    await application.approveProjectPolicy({ repository: root, expectedPolicyDigest: digest });
+    const originalLookup = ports.approvals.getLatestApprovalReceipt.bind(ports.approvals);
+    const policyLookup = vi.spyOn(ports.configuration, 'loadPolicy');
+    const receiptLookup = vi
+      .spyOn(ports.approvals, 'getLatestApprovalReceipt')
+      .mockImplementation(async (repositoryRoot) => {
+        const receipt = await originalLookup(repositoryRoot);
+        return receipt === null ? null : { ...receipt, repositoryRoot: '/another-repository' };
+      });
+
+    await expect(
+      application.runApprovedVerification({ repository: root, mode: 'quick' }),
+    ).rejects.toThrow(PolicyApprovalUnavailableError);
+    expect(policyLookup).toHaveBeenCalledWith(root);
+    expect(receiptLookup).toHaveBeenCalledWith(root);
+    expect(execute).not.toHaveBeenCalled();
+    expect(ports.saved).toEqual([]);
+  });
+
+  it('persists an approved-run cancellation as a cancelled BLOCK run', async () => {
+    const ports = dependencies();
+    ports.configuration.loadPolicy = async () => executableConfig;
+    const controller = new AbortController();
+    ports.verification.run = async (request) => {
+      expect(request.checks.map((check) => check.id)).toEqual(['lint', 'test']);
+      controller.abort();
+      return {
+        startedAt: '2026-01-01T00:00:00.000Z',
+        completedAt: '2026-01-01T00:00:01.000Z',
+        durationMs: 1_000,
+        interrupted: true,
+        results: [],
+      };
+    };
+    const application = new VerifierApplication(ports);
+    const digest = (await application.getPolicyApprovalStatus(root)).policyDigest!;
+    await application.approveProjectPolicy({ repository: root, expectedPolicyDigest: digest });
+
+    const run = await application.runApprovedVerification({
+      repository: root,
+      mode: 'quick',
+      signal: controller.signal,
+    });
+
+    expect(run.status).toBe('cancelled');
+    expect(run.gate?.status).toBe('BLOCK');
+    expect(ports.saved).toEqual([run]);
+  });
+
   it('requires migration before approval and never approves during migration', async () => {
     const ports = dependencies();
     const application = new VerifierApplication(ports);

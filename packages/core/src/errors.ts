@@ -1,3 +1,5 @@
+import type { PolicyApprovalState } from '@verify/domain';
+
 export class NoVerificationRunError extends Error {
   public constructor(repositoryRoot: string) {
     super(`No verification run exists for repository: ${repositoryRoot}`);
@@ -24,13 +26,20 @@ export class PolicyApprovalStaleError extends Error {
 export class PolicyApprovalUnavailableError extends Error {
   public readonly code = 'APPROVAL_UNAVAILABLE';
 
-  public constructor(reason: 'policy-missing' | 'policy-invalid' | 'migration-required') {
+  public constructor(
+    reason: Exclude<PolicyApprovalState, 'approved'>,
+    action: 'approve' | 'execute' = 'approve',
+  ) {
+    const messages: Record<Exclude<PolicyApprovalState, 'approved'>, string> = {
+      'policy-missing': 'No project policy exists.',
+      'policy-invalid': 'The project policy is invalid.',
+      'migration-required': 'Migrate the version-1 project policy first.',
+      'not-approved': 'The executable policy has not been approved.',
+      outdated: 'Approval is outdated because the executable policy changed.',
+      revoked: 'The executable-policy approval was revoked.',
+    };
     super(
-      reason === 'policy-missing'
-        ? 'No project policy exists to approve.'
-        : reason === 'policy-invalid'
-          ? 'The project policy is invalid and cannot be approved.'
-          : 'Migrate the version-1 project policy before approving executable policy.',
+      `${messages[reason]} ${action === 'execute' ? 'Verification did not start.' : 'Approval is unavailable.'}`,
     );
     this.name = 'PolicyApprovalUnavailableError';
   }

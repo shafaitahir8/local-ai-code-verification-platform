@@ -1093,6 +1093,259 @@ describe('explicit executable-policy approval interfaces', () => {
   });
 });
 
+describe('approved Quick and Full verification interfaces', () => {
+  it('fails closed for version-1 and unapproved version-2 policy without executing a check', async () => {
+    const { repository, database } = await fixture('basic-pass');
+    await withDatabasePath(database, async () => {
+      const composition = createApplicationComposition();
+      openCompositions.push(composition);
+      const legacy = await runCliProcess(['quick', repository, '--json'], database);
+      expect(legacy).toMatchObject({ code: 2, stderr: '' });
+      expect(JSON.parse(legacy.stdout)).toMatchObject({
+        error: { code: 'APPROVAL_UNAVAILABLE' },
+      });
+
+      const preview = await composition.application.previewProjectConfigMigration(repository);
+      await composition.application.applyProjectConfigMigration({
+        repository,
+        expectedSourceDigest: preview.sourceDigest,
+        expectedTargetDigest: preview.targetDigest,
+      });
+      const unapproved = await runCliProcess(['full', repository, '--json'], database);
+      expect(unapproved).toMatchObject({ code: 2, stderr: '' });
+      expect(JSON.parse(unapproved.stdout)).toMatchObject({
+        error: { code: 'APPROVAL_UNAVAILABLE' },
+      });
+      expect(await composition.application.getRunHistory(repository)).toEqual([]);
+    });
+  });
+
+  it('runs only approved mode suites through one core, CLI, and protocol execution path', async () => {
+    const { repository, database } = await fixture('basic-pass');
+    await withDatabasePath(database, async () => {
+      const composition = createApplicationComposition();
+      openCompositions.push(composition);
+      const preview = await composition.application.previewProjectConfigMigration(repository);
+      await composition.application.applyProjectConfigMigration({
+        repository,
+        expectedSourceDigest: preview.sourceDigest,
+        expectedTargetDigest: preview.targetDigest,
+      });
+      const status = await composition.application.getPolicyApprovalStatus(repository);
+      if (status.policyDigest === null) throw new Error('Expected a schema-v2 policy digest.');
+      await composition.application.approveProjectPolicy({
+        repository,
+        expectedPolicyDigest: status.policyDigest,
+      });
+
+      const quick = await runCliProcess(['quick', repository, '--json'], database);
+      expect(quick).toMatchObject({ code: 0, stderr: '' });
+      const quickRun = JSON.parse(quick.stdout) as VerificationRun;
+      expect(quickRun.checks.map((check) => check.id)).toEqual(['test', 'lint']);
+      expect(quickRun.gate?.status).toBe('PASS');
+
+      const full = await runCliProcess(['full', repository, '--json'], database);
+      expect(full).toMatchObject({ code: 0, stderr: '' });
+      const fullRun = JSON.parse(full.stdout) as VerificationRun;
+      expect(fullRun.checks.map((check) => check.id)).toEqual(['test', 'lint', 'build']);
+      expect(fullRun.gate?.status).toBe('PASS');
+
+      const frames: string[] = [];
+      await handleProtocolRequest(
+        composition.application,
+        {
+          protocolVersion: PROTOCOL_VERSION,
+          id: 'approved-quick',
+          method: 'verification.plan.run',
+          params: { repository, mode: 'quick' },
+        },
+        { write: (frame) => frames.push(frame), diagnostic: () => undefined },
+      );
+      const terminal = decodeResultLine('verification.plan.run', frames.at(-1) ?? '');
+      if ('error' in terminal) throw new Error(terminal.error.message);
+      expect(terminal.result.checks.map((check) => check.id)).toEqual(
+        quickRun.checks.map((check) => check.id),
+      );
+      expect(frames.some((frame) => frame.includes('"event":"check.started"'))).toBe(true);
+      expect(frames.some((frame) => frame.includes('"event":"run.completed"'))).toBe(true);
+      const history = await composition.application.getRunHistory(repository);
+      expect(history.map((run) => run.id)).toContain(terminal.result.id);
+    });
+  }, 20_000);
+
+  it('rejects stale and revoked approval without invoking previously reviewed commands', async () => {
+    const { repository, database } = await fixture('basic-pass');
+    await withDatabasePath(database, async () => {
+      const composition = createApplicationComposition();
+      openCompositions.push(composition);
+      const preview = await composition.application.previewProjectConfigMigration(repository);
+      await composition.application.applyProjectConfigMigration({
+        repository,
+        expectedSourceDigest: preview.sourceDigest,
+        expectedTargetDigest: preview.targetDigest,
+      });
+      const policy = await composition.application.getPolicyApprovalStatus(repository);
+      if (policy.policyDigest === null) throw new Error('Expected a schema-v2 policy digest.');
+      await composition.application.approveProjectPolicy({
+        repository,
+        expectedPolicyDigest: policy.policyDigest,
+      });
+      const policyPath = join(repository, '.verify', 'project.yml');
+      const source = await readFile(policyPath, 'utf8');
+      await writeFile(policyPath, source.replace('command: npm test', 'command: npm run changed'));
+
+      const stale = await runCliProcess(['quick', repository, '--json'], database);
+      expect(stale).toMatchObject({ code: 2, stderr: '' });
+      expect(JSON.parse(stale.stdout)).toMatchObject({
+        error: { code: 'APPROVAL_UNAVAILABLE' },
+      });
+      expect(await composition.application.getRunHistory(repository)).toEqual([]);
+
+      await composition.application.revokeProjectPolicyApproval(repository);
+      await writeFile(policyPath, source);
+      const revoked = await runCliProcess(['full', repository, '--json'], database);
+      expect(revoked).toMatchObject({ code: 2, stderr: '' });
+      expect(JSON.parse(revoked.stdout)).toMatchObject({
+        error: { code: 'APPROVAL_UNAVAILABLE' },
+      });
+      expect(await composition.application.getRunHistory(repository)).toEqual([]);
+    });
+  });
+
+  it('cancels an active approved Quick run and persists its correlated BLOCK terminal without starting later suites', async () => {
+    const { repository, database } = await fixture('basic-pass');
+    const laterCheckMarker = join(repository, 'approved-later-check.marker');
+    await writeFile(
+      join(repository, 'scripts', 'approved-slow.mjs'),
+      [
+        "process.stdout.write('approved slow command started\\n');",
+        'setInterval(() => undefined, 1_000);',
+        '',
+      ].join('\n'),
+    );
+    await writeFile(
+      join(repository, 'scripts', 'approved-later.mjs'),
+      [
+        "import { writeFileSync } from 'node:fs';",
+        "writeFileSync(process.env.VERIFY_LATER_CHECK_MARKER, 'started');",
+        '',
+      ].join('\n'),
+    );
+
+    await withDatabasePath(database, async () => {
+      const composition = createApplicationComposition();
+      openCompositions.push(composition);
+      const preview = await composition.application.previewProjectConfigMigration(repository);
+      await composition.application.applyProjectConfigMigration({
+        repository,
+        expectedSourceDigest: preview.sourceDigest,
+        expectedTargetDigest: preview.targetDigest,
+      });
+      const policyPath = join(repository, '.verify', 'project.yml');
+      const policy = await readFile(policyPath, 'utf8');
+      await writeFile(
+        policyPath,
+        policy
+          .replace('command: npm test', 'command: node scripts/approved-slow.mjs')
+          .replace('command: npm run lint', 'command: node scripts/approved-later.mjs'),
+      );
+      const status = await composition.application.getPolicyApprovalStatus(repository);
+      if (status.policyDigest === null) throw new Error('Expected a schema-v2 policy digest.');
+      await composition.application.approveProjectPolicy({
+        repository,
+        expectedPolicyDigest: status.policyDigest,
+      });
+    });
+
+    const protocol = startProtocolProcess(database, {
+      VERIFY_LATER_CHECK_MARKER: laterCheckMarker,
+    });
+    const runRequest = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'approved-quick-cancellation',
+      method: 'verification.plan.run',
+      params: { repository, mode: 'quick' },
+    } satisfies ProtocolRequest<'verification.plan.run'>;
+    protocol.send(runRequest);
+    await protocol.waitFor(
+      ({ message }) =>
+        message.id === runRequest.id &&
+        'event' in message &&
+        message.event === 'check.output' &&
+        message.data.checkId === 'test',
+      'approved slow-check output',
+    );
+
+    const cancelRequest = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'cancel-approved-quick',
+      method: 'verification.cancel',
+      params: { targetRequestId: runRequest.id },
+    } satisfies ProtocolRequest<'verification.cancel'>;
+    protocol.send(cancelRequest);
+    expect(
+      decodeResultLine(
+        'verification.cancel',
+        (
+          await protocol.waitFor(
+            ({ message }) => message.id === cancelRequest.id && 'result' in message,
+            'approved Quick cancellation acknowledgement',
+          )
+        ).line,
+      ),
+    ).toMatchObject({ result: { accepted: true } });
+
+    const terminal = decodeResultLine(
+      'verification.plan.run',
+      (
+        await protocol.waitFor(
+          ({ message }) => message.id === runRequest.id && 'result' in message,
+          'approved Quick cancelled terminal',
+        )
+      ).line,
+    );
+    if ('error' in terminal) throw new Error(terminal.error.message);
+    const completed = protocol.records.find(
+      ({ message }) =>
+        message.id === runRequest.id && 'event' in message && message.event === 'run.completed',
+    );
+    expect(completed).toBeDefined();
+    if (
+      completed === undefined ||
+      !('event' in completed.message) ||
+      completed.message.event !== 'run.completed'
+    ) {
+      throw new Error('The approved cancelled run did not emit run.completed.');
+    }
+    expect(terminal.result).toStrictEqual(completed.message.data.run);
+    expect(terminal.result).toMatchObject({
+      status: 'cancelled',
+      gate: { status: 'BLOCK' },
+      checks: [{ id: 'test', status: 'cancelled' }],
+    });
+    expect(
+      protocol.records.some(
+        ({ message }) =>
+          message.id === runRequest.id &&
+          'event' in message &&
+          message.event === 'check.started' &&
+          message.data.check.id === 'lint',
+      ),
+    ).toBe(false);
+
+    const execution = await protocol.finish();
+    expect(execution).toMatchObject({ code: 0, stderr: '' });
+    expect(
+      protocol.records.filter(({ message }) => message.id === runRequest.id && 'result' in message),
+    ).toHaveLength(1);
+    await expect(readFile(laterCheckMarker, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    const history = JSON.parse(
+      (await runCliProcess(['history', repository, '--json'], database)).stdout,
+    ) as VerificationRun[];
+    expect(history).toContainEqual(terminal.result);
+  }, 25_000);
+});
+
 describe('built child-process protocol', () => {
   it('exposes one read-only plan preview equivalently through core, CLI, and protocol', async () => {
     const { repository, database } = await fixture('project-intelligence/node-vite-vitest');

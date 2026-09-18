@@ -4437,3 +4437,692 @@ Next safe step:
 
 - Stage only the audited tracked files plus seven named untracked 6C files, run cached diff and
   whitespace checks, then commit and push without rewriting history or moving tags.
+
+## 2026-09-17 — Iteration 6 slice 6D start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Confirmed clean `main` at committed/pushed 6C SHA `784a999`, unchanged `v0.1.0`, and no existing
+  6D edits. Read the architecture, TASK-017, roadmap, execution/approval/cancellation ADRs, and
+  package boundaries; defined TASK-018's approved Quick/Full execution-only scope.
+
+Affected:
+
+- `docs/tasks/TASK-018-approved-quick-full-verification.md` and this recovery journal initially.
+
+Validated:
+
+- `main` matches `origin/main`; existing configured verification remains the sole execution path
+  to reuse. No check, migration, or build has been run for 6D yet.
+
+Remaining:
+
+- Implement policy/receipt authority and suite selection in core, additive protocol/CLI/native/
+  desktop actions, focused/full tests, packaged smoke, final audit, commit, and push.
+
+Next safe step:
+
+- Add a fail-closed core Quick/Full authority boundary and tests before connecting interfaces.
+
+## 2026-09-17 — Iteration 6 slice 6D interrupted integration
+
+Status: IN PROGRESS
+
+Completed:
+
+- Added a draft core approved Quick/Full execution path that reloads schema-v2 policy and local
+  receipt, checks the semantic digest, selects named suites, and hands them to the existing
+  verification runner. Began focused core tests. Protocol/CLI, native, and desktop integrations
+  have partial uncommitted edits; TASK-018 records the scope.
+
+Affected:
+
+- Core, protocol, CLI, Tauri bridge, desktop, TASK-018, tests, and this journal. Treat the current
+  working tree as authoritative; none of these 6D edits are committed.
+
+Validated:
+
+- Baseline was clean at pushed 6C SHA `784a999`; `v0.1.0` was unchanged. The first focused core
+  typecheck failed only in newly added tests: an optional suite access and a `test.each` callback
+  tuple mismatch. No 6D full regression, native, packaged smoke, or CI validation has run.
+
+Remaining:
+
+- Fix the two core test typing errors; finish and audit partial interface edits; test approval
+  revalidation, fail-closed cases, cancellation, and persisted gates/history. Then run focused and
+  full validation, native/package smoke, final Git audit, commit, and push if all green.
+
+Next safe step:
+
+- Inspect the full current diff without resetting it, fix the two core test typing errors, run
+  core typecheck/tests, then classify and validate the partial protocol/CLI/native/desktop edits.
+
+## 2026-09-17 — Slice 6D core typing recovery
+
+Status: IN PROGRESS
+
+Completed:
+
+- Recovered the intentional 6D working tree and fixed the two new core test typing errors without
+  changing production semantics. The draft Quick/Full path continues to use the existing runner.
+
+Affected:
+
+- `packages/core/tests/application.test.ts` and this recovery journal.
+
+Validated:
+
+- Core typecheck, all 34 core tests, core build, and `git diff --check` passed.
+
+Remaining:
+
+- Audit and strengthen fail-closed core coverage; validate partial protocol/CLI/native/desktop
+  integrations, full regression, and installed/native smoke before any commit or push.
+
+Next safe step:
+
+- Test current-receipt revalidation, missing/invalid membership, and cancellation at the core
+  boundary, then run focused interface suites.
+
+## 2026-09-17 — Slice 6D core execution boundary validated
+
+Status: IN PROGRESS
+
+Completed:
+
+- Added approved Quick/Full suite selection from the freshly loaded schema-v2 policy and receipt,
+  with fail-closed missing/revoked/outdated/invalid/v1/empty/unresolved cases and the existing
+  verification runner for gates and persistence. Added focused authority and cancellation tests.
+
+Affected:
+
+- `packages/core/src` and `packages/core/tests/application.test.ts`.
+
+Validated:
+
+- Core typecheck, all 36 core tests, core build, and `git diff --check` passed. No approved-run
+  authority failure invoked the runner or persisted a synthetic run in focused tests.
+
+Remaining:
+
+- Correct and validate protocol/CLI/native/desktop integration, including correlated cancellation,
+  then full regression and packaged smoke.
+
+Next safe step:
+
+- Run focused protocol/CLI/desktop/native checks, resolve their actual failures, and add a
+  protocol-session cancellation test for approved runs.
+
+## 2026-09-17 — Slice 6D interface validation checkpoint
+
+Status: IN PROGRESS
+
+Completed:
+
+- Protocol schema/type tests passed. A desktop audit found and fixed a nested-repository path
+  mismatch in the approval-action guard; core remains the execution authority. Added a UI
+  regression fixture for canonical-root status and nested selected paths. Added a correlated
+  approved-run cancellation protocol-session test, pending validation.
+
+Affected:
+
+- Protocol, CLI integration tests, desktop hook/mock/tests, and this journal.
+
+Validated:
+
+- Protocol typecheck and 27 tests passed; desktop typecheck passed. The desktop repository-switch
+  guard test passed after waiting for asynchronous approval loading. The first full desktop suite
+  had 59 passes and that one timing assertion failure. The CLI suite had 34 passes and one new
+  multi-process test timing out at its default 5-second limit; no failure in a gate assertion was
+  observed before timeout.
+
+Remaining:
+
+- Revalidate desktop and CLI suites after scoped test timing fixes, then Rust/native integration,
+  full regression, and packaged smoke.
+
+Next safe step:
+
+- Run focused desktop tests and the new CLI cancellation/session tests, then repeat the full
+  package suites before the workspace-wide regression.
+
+## 2026-09-17 — Slice 6D focused interfaces complete; full gate next
+
+Status: IN PROGRESS
+
+Completed:
+
+- Integrated approved Quick/Full core, additive protocol/CLI/native routing, desktop actions,
+  nested-path guard fix, and a real correlated approved-run cancellation session test. Extended
+  the Windows SEA and installed-UI smoke harnesses for approval and mode-specific execution.
+  Updated architecture, package, and user documentation for the 6D behavior.
+
+Affected:
+
+- TASK-018 source/tests/docs and existing Windows smoke scripts; no dependency or lockfile change.
+
+Validated:
+
+- Core typecheck/tests (36)/build; protocol typecheck/tests (27); CLI typecheck and full tests
+  (36); desktop lint/typecheck and full tests (60); script syntax checks and `git diff --check`
+  passed. The smoke extensions themselves have not yet been run against a rebuilt package.
+
+Remaining:
+
+- Sequential workspace format/lint/typecheck/test/build, Rust gates, rebuilt SEA and installed
+  package smoke, final scope/Git audit, then commit and push only if all pass.
+
+Next safe step:
+
+- Run the five workspace handoff gates sequentially, starting with `format:check`; do not overlap
+  Turbo test/build graphs.
+
+## 2026-09-17 — Slice 6D full-test scheduler diagnosis
+
+Status: IN PROGRESS
+
+Completed:
+
+- Workspace format, lint, and typecheck passed after binding one new test method reference. The
+  first full Turbo test graph stopped on an unchanged real-Git repository test's default 5-second
+  timeout under concurrent load; its timed-out fixture then reported a busy-directory cleanup.
+
+Affected:
+
+- Only the new core test reference changed; the repository package and its test remain untouched.
+
+Validated:
+
+- Focused core lint/typecheck/36 tests passed after the fix. The unchanged repository package
+  passed all 11 tests when rerun alone, classifying the Turbo failure as scheduler sensitivity,
+  not a demonstrated 6D regression.
+
+Remaining:
+
+- Repeat the complete test graph with bounded concurrency without removing assertions; run full
+  build, Rust gates, SEA/package/installed smoke, final audit, commit, and push.
+
+Next safe step:
+
+- Run the full repository test graph at lower Turbo concurrency, then continue to build only if
+  every test passes.
+
+## 2026-09-17 — Slice 6D full-test concurrency checkpoint
+
+Status: IN PROGRESS
+
+Completed:
+
+- Workspace format, lint, and typecheck are green. The unchanged repository package passed all
+  11 isolated tests. A full Turbo test graph at concurrency two passed 12 of 13 package suites,
+  including core, desktop, protocol, and Windows command-adapter cancellation.
+
+Affected:
+
+- No production edit resulted from the test-graph failure; only this journal was appended.
+
+Validated:
+
+- CLI's 36 tests passed in an isolated package run. Under concurrent desktop integration load,
+  eight old/new CLI subprocess tests exceeded their default 5-second limits and timed-out fixture
+  cleanup reported busy directories. The same new Quick/Full and cancellation cases had passed in
+  isolation. This is scheduler-sensitive validation, not evidence of a 6D behavior failure.
+
+Remaining:
+
+- Run the full graph with one package test at a time, then build, Rust/native and packaged smoke.
+
+Next safe step:
+
+- Run `corepack pnpm test --concurrency=1` without overlapping any other test graph.
+
+## 2026-09-17 — Slice 6D full-test gate remains open
+
+Status: IN PROGRESS
+
+Completed:
+
+- Reran all 13 package test targets with one Turbo package at a time. Twelve targets passed;
+  CLI's integration target again exceeded the default five-second timeout in several existing
+  subprocess-heavy tests, although its approved Quick/Full and cancellation behavior tests that
+  ran to completion passed. The CLI package had passed 36/36 independently earlier.
+
+Affected:
+
+- No source/test assertions changed. Host inspection found no remaining verifier test child
+  process after the run; another resource-intensive user application was active and left alone.
+
+Validated:
+
+- Workspace format/lint/typecheck passed. The full test graph is **not** green and must not be
+  reported as passing. Isolated repository tests and earlier isolated CLI 36/36 passed.
+
+Remaining:
+
+- Reestablish a green complete test gate under suitable host conditions, then complete full build,
+  Rust, SEA, installed smoke, and final review before commit/push.
+
+Next safe step:
+
+- Continue non-overlapping build/native checks, then revisit CLI/full tests; do not weaken
+  behavioral assertions or kill unrelated user processes.
+
+## 2026-09-17 — Slice 6D native validation start
+
+Status: IN PROGRESS
+
+Completed:
+
+- All 13 workspace build targets passed. Format, lint, and typecheck passed. The full test graph
+  remains open because CLI subprocess tests timed out under current host load, although CLI 36/36
+  passed independently and the other 12 package targets passed in the full graph.
+
+Affected:
+
+- No additional source changes; this is a validation checkpoint.
+
+Validated:
+
+- Production frontend bundle and CLI build succeeded. No 6D native/package smoke result exists
+  yet, and no release claim follows from source compilation alone.
+
+Remaining:
+
+- Rust format/check/strict Clippy/tests, rebuilt SEA and no-Node smoke, Tauri package and installed
+  smoke, then revisit full tests and final audit.
+
+Next safe step:
+
+- Run locked Rust gates sequentially from `apps/desktop/src-tauri`, then rebuild the Windows SEA
+  only if native checks are green.
+
+## 2026-09-17 — Slice 6D Rust gates complete; SEA smoke next
+
+Status: IN PROGRESS
+
+Completed:
+
+- Validated the native bridge's additive approved-run routing and existing cancellation/process
+  containment code before rebuilding the self-contained sidecar.
+
+Affected:
+
+- Tauri bridge source/tests and the existing Windows SEA smoke harness.
+
+Validated:
+
+- `cargo fmt --check`, locked `cargo check`, strict Clippy, and locked Rust tests passed; 14 Rust
+  unit tests passed. Workspace build passed. Full default test graph is still open due to
+  scheduler-sensitive CLI timeouts and will be revisited.
+
+Remaining:
+
+- Rebuild SEA, run no-Node/outside-checkout engine smoke with approved Quick/Full and cancellation,
+  validate Tauri dev/NSIS and installed UI, then close test/Git gates.
+
+Next safe step:
+
+- Build the Windows x64 SEA from current source and run the expanded engine smoke without an
+  installed Node runtime on the child PATH.
+
+## 2026-09-17 — Slice 6D SEA smoke start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Rebuilt the self-contained Windows x64 engine from the current 6D source.
+
+Affected:
+
+- Windows sidecar build output and expanded SEA smoke harness; generated binaries remain ignored.
+
+Validated:
+
+- SEA bundle and executable injection completed successfully; the executable reports version 0.1.0.
+
+Remaining:
+
+- Run the expanded no-Node/outside-checkout smoke, then Tauri/NSIS and installed-app checks; the
+  full workspace test gate remains open under host-load-sensitive CLI timeouts.
+
+Next safe step:
+
+- Execute `corepack pnpm smoke:engine:windows` and diagnose any assertion failure before packaging.
+
+## 2026-09-17 — Slice 6D SEA cancellation fixture correction
+
+Status: IN PROGRESS
+
+Completed:
+
+- Diagnosed the first expanded SEA smoke failure: the deliberately restricted child PATH omits
+  `powershell.exe`, so the new cancellation fixture never emitted its ready marker. Replaced only
+  that fixture command with a Windows `cmd.exe` script using System32 ping.
+
+Affected:
+
+- Windows SEA smoke harness; no production cancellation or execution code changed.
+
+Validated:
+
+- Earlier smoke phases reached the new cancellation case. The failure frames proved no cancel
+  request was sent because the fixture command was unavailable; no orphaned process remained.
+
+Remaining:
+
+- Rerun SEA smoke, then package/installed checks and full test-gate closure.
+
+Next safe step:
+
+- Rerun the expanded SEA smoke and verify the new fixture emits its ready marker under the
+  no-Node PATH.
+
+## 2026-09-17 — Slice 6D SEA smoke complete; full test retry
+
+Status: IN PROGRESS
+
+Completed:
+
+- Rebuilt the current Windows x64 SEA and passed the expanded outside-checkout smoke with Node
+  absent from the engine child PATH.
+
+Affected:
+
+- Windows SEA smoke fixture and generated ignored sidecar output.
+
+Validated:
+
+- Eight profile fixtures, approved Quick/Full suite selection, missing/stale/revoked approval
+  rejection, correlated approved-run cancellation with persisted cancelled BLOCK, legacy
+  PASS/WARN/BLOCK/history, and protocol argv all passed through the self-contained engine.
+
+Remaining:
+
+- Close the full workspace test gate, then validate Tauri dev, NSIS, and installed UI; perform final
+  documentation and Git audits.
+
+Next safe step:
+
+- Run a non-overlapping full Turbo test graph with one worker and a runtime-only 30-second Vitest
+  deadline; report it separately from the earlier default 5-second host-load failures.
+
+## 2026-09-17 — Slice 6D full workspace test gate complete
+
+Status: IN PROGRESS
+
+Completed:
+
+- Ran all 13 package test suites in one non-overlapping Turbo graph with one worker and a
+  runtime-only 30-second Vitest deadline; 24 dependent build/test tasks passed.
+
+Affected:
+
+- Validation only; no test assertions or product behavior changed.
+
+Validated:
+
+- Desktop 60/60, CLI 36/36, core 36/36, protocol 27/27, storage 15/15, and the unchanged
+  generic-command adapter 9/9 passed, along with every other package suite. Earlier default
+  5-second runs under host load did fail on subprocess startup and are not represented as green.
+
+Remaining:
+
+- Tauri development launch, NSIS packaging, installed outside-checkout smoke, final format/lint/
+  typecheck/build/diff audit, documentation status, and Git commit/push.
+
+Next safe step:
+
+- Launch Tauri development with the rebuilt sidecar, observe native app and web server, then stop
+  it through its owning session and check for related orphan processes before packaging.
+
+## 2026-09-17 — Slice 6D Tauri development launch complete; package start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Launched the current Tauri development application after rebuilding its Windows sidecar, then
+  stopped it through the owning terminal session.
+
+Affected:
+
+- Development-only native app and Vite server; no source changes.
+
+Validated:
+
+- Native debug build finished, `local-code-verifier.exe` opened a titled window, and the local
+  frontend responded HTTP 200 on port 1420. After Ctrl+C, the app, engine, and listener were gone.
+  The terminal's nonzero exit is from the deliberate Ctrl+C shutdown, not a launch failure.
+
+Remaining:
+
+- Build NSIS from the current source, run the expanded installed outside-checkout smoke, then
+  finish documentation/format/Git audit and commit/push only if all gates hold.
+
+Next safe step:
+
+- Run `tauri build --bundles nsis` without overlapping builds, inspect the bundled sidecar and
+  installer, then use a fresh external installation path for the real UI smoke.
+
+## 2026-09-18 — Slice 6D NSIS artifact confirmed; installed smoke start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Built the optimized Windows application and generated the NSIS installer from the current 6D
+  source. Confirmed the release bundle sidecar SHA-256 matches the rebuilt externalBin exactly.
+
+Affected:
+
+- Ignored Tauri release app, sidecar, and installer outputs only.
+
+Validated:
+
+- Installer exists at `apps/desktop/src-tauri/target/release/bundle/nsis/Local Code
+Verifier_0.1.0_x64-setup.exe` (26,097,054 bytes; SHA-256
+  `06A4182FF96F5C6F4A2EF91F51810022F6E7EA154E6014A41AF824AA8EC87126`). Bundled and source
+  sidecar hashes are both `510BBC7C83A807A4CB0060D6F020FC8663848B7FE77AACF489FB457C479E33D6`.
+  Git ignores all three generated binaries. The original build session ended before its exit code
+  could be recovered, so the artifact is confirmed by file inspection, not by a recorded final
+  command status.
+
+Remaining:
+
+- Run the actual installed outside-checkout WebView/IPC/sidecar smoke, reconcile docs and final
+  validation, then commit/push only if the complete checkpoint is coherent.
+
+Next safe step:
+
+- Install this exact NSIS artifact into a fresh external path with spaces and Unicode; run the
+  existing installed smoke harness and retain its summary and process-cleanup evidence.
+
+## 2026-09-18 — Slice 6D installed UI race found
+
+Status: IN PROGRESS
+
+Completed:
+
+- The installed copy passed its bundled-engine no-Node smoke and approved Quick UI execution.
+  The UI smoke then exposed a real action-readiness race before Full execution: the UI marked a
+  run completed while its gate/history refresh was still in flight, so a newly enabled Full click
+  could be ignored by the still-owned run controller.
+- Moved the completed UI phase after gate/history refresh and added a deterministic barrier test
+  for the disabled-until-ready boundary.
+
+Affected:
+
+- Desktop run-phase transition, mock timing control, desktop regression test; no core authority
+  or protocol behavior changed.
+
+Validated:
+
+- Installed engine smoke passed. The initial installed UI smoke failed specifically waiting for
+  Full evidence after Quick; it is not claimed as passed. The focused fix still needs validation.
+
+Remaining:
+
+- Run focused desktop checks, rebuild the changed frontend/package, repeat installed smoke in a
+  fresh external path, then complete final gates/audit/commit/push.
+
+Next safe step:
+
+- Run desktop format/lint/typecheck/tests, then rebuild NSIS because the production UI changed.
+
+## 2026-09-18 — Slice 6D installed UI race fix validated
+
+Status: IN PROGRESS
+
+Completed:
+
+- Kept approved actions disabled until the finished run's gate/history refresh completes; added a
+  barrier-based regression that freezes that refresh and proves a second action cannot be exposed
+  before the run controller is released.
+
+Affected:
+
+- Desktop controller, mock timing option, and desktop tests only.
+
+Validated:
+
+- Focused race test passed; desktop lint and typecheck passed; full desktop suite passed 61/61.
+  The failed installed smoke artifact predates this UI fix and cannot be reused as proof.
+
+Remaining:
+
+- Rebuild the production package, rerun the installed smoke in a fresh external directory, then
+  complete the final workspace and Git gates.
+
+Next safe step:
+
+- Rebuild NSIS from the corrected UI and verify its installer/sidecar hashes before the next
+  installed-app run.
+
+## 2026-09-18 — Slice 6D corrected package ready for installed smoke
+
+Status: IN PROGRESS
+
+Completed:
+
+- Rebuilt Tauri release and NSIS after the UI readiness fix; the build command exited 0.
+
+Affected:
+
+- Ignored release app, installer, and bundled sidecar output; no new source edits.
+
+Validated:
+
+- New installer SHA-256 is `541A7B7B14D6F410794215846BBDA483428FE76E59389C4D2C1C7C02EA856763`
+  (26,103,579 bytes). The bundled sidecar matches the rebuilt externalBin at SHA-256
+  `510BBC7C83A807A4CB0060D6F020FC8663848B7FE77AACF489FB457C479E33D6`.
+
+Remaining:
+
+- Repeat installed WebView/IPC smoke from this exact artifact in a fresh external path, then
+  final workspace, documentation, and Git validation.
+
+Next safe step:
+
+- Run `scripts/smoke-installed-windows.ps1` with this installer and a new Unicode/spaces output
+  directory; retain the summary or exact failure evidence.
+
+## 2026-09-18 — Slice 6D installed application smoke complete
+
+Status: IN PROGRESS
+
+Completed:
+
+- Installed the corrected NSIS package outside the checkout under a Unicode/spaces path and ran
+  the full packaged engine and real WebView-to-Tauri-to-sidecar workflow, including app restart.
+
+Affected:
+
+- External retained smoke evidence under `C:/Users/Xtreme/AppData/Local/Temp/Local Verifier 6D
+installed smoke ü 20260918-051000`; no repository source changed in this phase.
+
+Validated:
+
+- Installed engine no-Node smoke passed. UI Quick ran only `quick`; Full ran `quick, full` with
+  persisted PASS. Missing approval kept actions disabled; stale and revoked approval started no
+  extra run and the unauthorized-command marker stayed absent. Legacy PASS/WARN/BLOCK, history,
+  profile matrix, approved/legacy cancelled BLOCK persistence, restart, and recorded command/
+  sidecar PID cleanup passed. The app launched with Node absent from its effective PATH; no
+  checkout-relative runtime path was needed. `summary.json` and `Installed UI Workflow
+ü/ui-summary.json` retain exact evidence; no task-owned app/sidecar remains running.
+
+Remaining:
+
+- Re-run final format/lint/typecheck/full tests/build after the UI fix, reconcile task/docs,
+  perform complete Git hygiene audit, and commit/push only if all final gates hold.
+
+Next safe step:
+
+- Run final workspace gates sequentially with a serialized full test graph and runtime-only
+  deadline; preserve the separate record of the earlier default 5-second failures.
+
+## 2026-09-18 — Slice 6D final regression complete; Git audit start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Re-ran format, lint, typecheck, all package tests, and all builds after the installed-UI race fix.
+  Reconciled the task status and user/protocol documentation with executable Quick/Full behavior.
+
+Affected:
+
+- Validation results, TASK-018, user guide, protocol README, and append-only journal.
+
+Validated:
+
+- Format, lint, and typecheck passed. The serialized full Turbo graph passed all 13 package suites
+  (24 dependent tasks), including desktop 61/61; all 13 builds passed. Rust format, locked check,
+  strict Clippy, and 14 Rust tests were already green after the native 6D change. The final NSIS
+  installed smoke passed. Earlier default 5-second full-test failures under host load remain
+  recorded separately; assertions were not weakened.
+
+Remaining:
+
+- Review the complete diff, untracked files, ignored output, source/lockfile scope, and staged
+  patch. If coherent, commit once and push current main to origin.
+
+Next safe step:
+
+- Run formatting and diff checks after the final documentation edits, inspect Git scope in full,
+  then stage only intentional 6D files for cached-diff review.
+
+## 2026-09-18 — Slice 6D implementation and release validation complete
+
+Status: COMPLETE
+
+Completed:
+
+- Finished approved Quick/Full execution, packaged Windows validation, documentation, and final
+  source-scope audit. No Iteration 7 work was added.
+
+Affected:
+
+- Core, protocol, CLI, native bridge, desktop, smoke harnesses, tests, and 6D documentation.
+
+Validated:
+
+- Format, lint, typecheck, serialized full test graph, all 13 builds, Rust gates (14 tests), SEA
+  no-Node smoke, Tauri dev, NSIS build, and fresh outside-checkout installed smoke passed. The
+  installed smoke evidence is under `C:/Users/Xtreme/AppData/Local/Temp/Local Verifier 6D installed
+smoke ü 20260918-051000`. Final `git diff --check` passed; generated binaries/installers remain
+  ignored, and no lockfile or unrelated source changes are present.
+
+Remaining:
+
+- Stage, inspect, commit, and push the validated milestone. The default five-second full-test run
+  timed out under host load; the serialized run passed without weakened assertions. A queued
+  pre-authorization cancellation race is not covered by the active approved-run smoke and should
+  be assessed separately if that state becomes user-reachable.
+
+Next safe step:
+
+- Stage only the 6D source/tests/docs, review the cached patch and whitespace check, commit once,
+  push `main` to `origin`, and verify the remote SHA.

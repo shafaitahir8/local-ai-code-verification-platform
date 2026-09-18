@@ -4,6 +4,7 @@ export {
   type ConfigurationState,
   type InitializeProjectRequest,
   type ProfileProjectRequest,
+  type RunApprovedVerificationRequest,
   type PreviewVerificationPlansRequest,
   type ProjectPolicyState,
   type RunVerificationRequest,

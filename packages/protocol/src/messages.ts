@@ -39,6 +39,7 @@ export const protocolRequestSchema = z.discriminatedUnion('method', [
   requestSchema('config.approval.revoke'),
   requestSchema('repository.inspect'),
   requestSchema('verification.run'),
+  requestSchema('verification.plan.run'),
   requestSchema('verification.cancel'),
   requestSchema('operation.cancel'),
   requestSchema('gate.latest'),

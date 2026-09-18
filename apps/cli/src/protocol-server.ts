@@ -24,6 +24,7 @@ import {
   type ProtocolErrorCode,
   type ProtocolRequest,
 } from '@verify/protocol';
+import type { VerificationLifecycleEvent } from '@verify/verification';
 
 import { formatError } from './format.js';
 import type { CliIo } from './program.js';
@@ -37,11 +38,12 @@ interface ProtocolRequestContext {
   readonly signal?: AbortSignal;
   readonly cancelTarget?: (
     targetRequestId: string,
-    expectedMethod?: CancellableProtocolMethod,
+    expectedMethod?: CancellableProtocolMethod | 'verification',
   ) => boolean;
 }
 
-type CancellableProtocolMethod = 'project.profile' | 'verification.plan' | 'verification.run';
+type CancellableProtocolMethod =
+  'project.profile' | 'verification.plan' | 'verification.run' | 'verification.plan.run';
 
 interface CancellableOperation {
   readonly method: CancellableProtocolMethod;
@@ -88,6 +90,7 @@ class ProtocolSession {
 
     const cancellableMethod =
       request.method === 'verification.run' ||
+      request.method === 'verification.plan.run' ||
       request.method === 'verification.plan' ||
       request.method === 'project.profile'
         ? request.method
@@ -140,12 +143,20 @@ class ProtocolSession {
     );
   }
 
-  #cancel(targetRequestId: string, expectedMethod?: CancellableProtocolMethod): boolean {
+  #cancel(
+    targetRequestId: string,
+    expectedMethod?: CancellableProtocolMethod | 'verification',
+  ): boolean {
     const operation = this.#cancellableOperations.get(targetRequestId);
     if (
       operation === undefined ||
       operation.controller.signal.aborted ||
-      (expectedMethod !== undefined && operation.method !== expectedMethod)
+      (expectedMethod === 'verification' &&
+        operation.method !== 'verification.run' &&
+        operation.method !== 'verification.plan.run') ||
+      (expectedMethod !== undefined &&
+        expectedMethod !== 'verification' &&
+        operation.method !== expectedMethod)
     ) {
       return false;
     }
@@ -364,7 +375,7 @@ export async function handleProtocolRequest(
             id: request.id,
             result: {
               accepted:
-                context.cancelTarget?.(request.params.targetRequestId, 'verification.run') ?? false,
+                context.cancelTarget?.(request.params.targetRequestId, 'verification') ?? false,
             },
           }),
         );
@@ -382,11 +393,12 @@ export async function handleProtocolRequest(
         );
         return;
       }
-      case 'verification.run': {
-        const run = await application.runVerification({
+      case 'verification.run':
+      case 'verification.plan.run': {
+        const options = {
           repository: request.params.repository,
           signal: context.signal,
-          onEvent: (event, runId) => {
+          onEvent: (event: VerificationLifecycleEvent, runId: string) => {
             switch (event.type) {
               case 'check.started':
                 writer.write(
@@ -426,7 +438,11 @@ export async function handleProtocolRequest(
                 break;
             }
           },
-        });
+        };
+        const run =
+          request.method === 'verification.run'
+            ? await application.runVerification(options)
+            : await application.runApprovedVerification({ ...options, mode: request.params.mode });
         writer.write(
           encodeEvent({
             protocolVersion: PROTOCOL_VERSION,
@@ -435,13 +451,23 @@ export async function handleProtocolRequest(
             data: { run },
           }),
         );
-        writer.write(
-          encodeResult('verification.run', {
-            protocolVersion: PROTOCOL_VERSION,
-            id: request.id,
-            result: run,
-          }),
-        );
+        if (request.method === 'verification.run') {
+          writer.write(
+            encodeResult('verification.run', {
+              protocolVersion: PROTOCOL_VERSION,
+              id: request.id,
+              result: run,
+            }),
+          );
+        } else {
+          writer.write(
+            encodeResult('verification.plan.run', {
+              protocolVersion: PROTOCOL_VERSION,
+              id: request.id,
+              result: run,
+            }),
+          );
+        }
         return;
       }
       case 'gate.latest': {

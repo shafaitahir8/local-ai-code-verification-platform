@@ -5,7 +5,7 @@
 Owns the deterministic application use cases shared by every interface: profile, preview Quick/Full
 verification plans, inspect project policy, preview/apply an explicit configuration migration,
 inspect/approve/revoke local executable-policy approval, discover, initialize, inspect, run
-verification, retrieve the latest gate, and list history. It
+configured or approved Quick/Full verification, retrieve the latest gate, and list history. It
 protects the boundary between interface composition and application behavior.
 
 ## Public API
@@ -17,6 +17,8 @@ protects the boundary between interface composition and application behavior.
 - `getPolicyApprovalStatus`, `approveProjectPolicy`, and `revokeProjectPolicyApproval` combine a
   freshly validated schema-v2 policy digest with a local `ApprovalReceiptPort`; these methods do
   not execute a plan or suite.
+- `runApprovedVerification` rereads schema-v2 policy and the matching local receipt at execution
+  time, selects only named suites for the requested mode, and uses the existing runner and run store.
 - `ProjectProfilerPort`, `ConfigurationPort`, `RepositoryPort`, `VerificationExecutorPort`,
   `RunRepositoryPort`, and `ApprovalReceiptPort`: application-facing boundary contracts.
 - Request and dependency types for initialization and verification.
@@ -62,6 +64,9 @@ persistence by the injected run repository.
 - Revocation is keyed to the canonical repository root, so an active receipt can be withdrawn even
   if the policy is temporarily missing, version 1, or invalid; restoring its old contents does not
   reactivate a revoked receipt.
+- Approved Quick/Full execution fails before invoking the runner or persisting history if policy,
+  receipt, or mode membership is missing, invalid, stale, or revoked. Legacy configured
+  `runVerification` keeps its version-1/version-2 named-suite behavior.
 
 ## Security and privacy
 

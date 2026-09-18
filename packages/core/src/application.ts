@@ -15,6 +15,7 @@ import {
   digestExecutablePolicy,
   reviewExecutablePolicy,
   toVerificationSuites,
+  validateProjectConfigV2,
 } from '@verify/config';
 import type {
   PolicyApprovalStatus,
@@ -22,9 +23,12 @@ import type {
   ProjectProfileProgress,
   ProjectProfileResult,
   RepositoryChange,
+  VerificationPlanMode,
   VerificationPlanPreviewResult,
   VerificationRun,
+  VerificationSuite,
 } from '@verify/domain';
+import { EXECUTABLE_POLICY_DIGEST_VERSION } from '@verify/domain';
 import { evaluateQualityGate } from '@verify/policy';
 import type { VerificationLifecycleEvent } from '@verify/verification';
 
@@ -90,6 +94,13 @@ export interface InitializeProjectRequest {
 export interface RunVerificationRequest {
   readonly repository: string;
   readonly environment?: Readonly<Record<string, string>>;
+  readonly signal?: AbortSignal;
+  readonly onEvent?: (event: VerificationLifecycleEvent, runId: string) => void;
+}
+
+export interface RunApprovedVerificationRequest {
+  readonly repository: string;
+  readonly mode: VerificationPlanMode;
   readonly signal?: AbortSignal;
   readonly onEvent?: (event: VerificationLifecycleEvent, runId: string) => void;
 }
@@ -334,9 +345,79 @@ export class VerifierApplication {
   public async runVerification(request: RunVerificationRequest): Promise<VerificationRun> {
     const repositoryRoot = await this.#repository.resolveRoot(request.repository);
     const config = await this.#configuration.loadPolicy(repositoryRoot);
+    return this.#executeVerification(repositoryRoot, toVerificationSuites(config), request);
+  }
+
+  public async runApprovedVerification(
+    request: RunApprovedVerificationRequest,
+  ): Promise<VerificationRun> {
+    const repositoryRoot = await this.#repository.resolveRoot(request.repository);
+    let policy: ProjectConfigV1 | ProjectConfigV2;
+    try {
+      policy = await this.#configuration.loadPolicy(repositoryRoot);
+    } catch (error) {
+      if (error instanceof ConfigNotFoundError) {
+        throw new PolicyApprovalUnavailableError('policy-missing', 'execute');
+      }
+      if (error instanceof ConfigValidationError || error instanceof ConfigUnsafePathError) {
+        throw new PolicyApprovalUnavailableError('policy-invalid', 'execute');
+      }
+      throw error;
+    }
+    if (policy.version !== 2) {
+      throw new PolicyApprovalUnavailableError('migration-required', 'execute');
+    }
+    const validated = validateProjectConfigV2(policy);
+    const currentDigest = digestExecutablePolicy(validated);
+    const receipt = await this.#approvals.getLatestApprovalReceipt(repositoryRoot);
+    if (receipt === null) {
+      throw new PolicyApprovalUnavailableError('not-approved', 'execute');
+    }
+    if (receipt.revokedAt !== null) {
+      throw new PolicyApprovalUnavailableError('revoked', 'execute');
+    }
+    if (
+      receipt.repositoryRoot !== repositoryRoot ||
+      receipt.policySchemaVersion !== 2 ||
+      receipt.digestVersion !== EXECUTABLE_POLICY_DIGEST_VERSION ||
+      receipt.policyDigest !== currentDigest
+    ) {
+      throw new PolicyApprovalUnavailableError('outdated', 'execute');
+    }
+
+    if (request.mode !== 'quick' && request.mode !== 'full') {
+      throw new ConfigValidationError([{ path: 'mode', message: 'must be quick or full.' }]);
+    }
+    const suiteIds = validated.plans[request.mode].suites;
+    if (suiteIds.length === 0) {
+      throw new ConfigValidationError([
+        { path: `plans.${request.mode}.suites`, message: 'must include a suite to execute.' },
+      ]);
+    }
+    const available = new Map(toVerificationSuites(validated).map((suite) => [suite.id, suite]));
+    const selected: VerificationSuite[] = suiteIds.map((id) => {
+      const suite = available.get(id);
+      if (suite === undefined) {
+        throw new ConfigValidationError([
+          { path: `plans.${request.mode}.suites`, message: `references unknown suite ${id}.` },
+        ]);
+      }
+      return suite;
+    });
+
+    // The selected immutable command snapshot comes from the just-authorized durable policy.
+    // No await occurs between the receipt comparison and handoff to the existing runner.
+    return this.#executeVerification(repositoryRoot, selected, request);
+  }
+
+  async #executeVerification(
+    repositoryRoot: string,
+    checks: VerificationSuite[],
+    request: Omit<RunVerificationRequest, 'repository'>,
+  ): Promise<VerificationRun> {
     const runId = this.#createRunId();
     const evidence = await this.#verification.run({
-      checks: toVerificationSuites(config),
+      checks,
       repositoryRoot,
       environment: request.environment,
       signal: request.signal,

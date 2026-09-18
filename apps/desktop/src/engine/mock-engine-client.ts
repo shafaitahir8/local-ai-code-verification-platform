@@ -16,6 +16,7 @@ export interface MockEngineClientOptions {
   readonly profileLatencyMs?: number;
   readonly verificationCheckLatencyMs?: number;
   readonly verificationCancellationBarrier?: Promise<void>;
+  readonly verificationRefreshBarrier?: Promise<void>;
   readonly failMethod?: ProtocolMethod;
   readonly profileCompleteness?: 'complete' | 'partial';
   readonly profileAmbiguous?: boolean;
@@ -28,6 +29,8 @@ export interface MockEngineClientOptions {
   readonly approvalStale?: boolean;
   readonly approvalStatusBarrier?: Promise<void>;
   readonly approvalReviewTestCommand?: string;
+  readonly outdateApprovalAfterStatusReads?: number;
+  readonly approvalCanonicalRoot?: string;
 }
 
 type VerificationRun = ProtocolResultMap['verification.run'];
@@ -529,6 +532,33 @@ function verificationRun(
   };
 }
 
+function approvedPlanRun(
+  repository: string,
+  scenario: MockGateScenario,
+  mode: 'quick' | 'full',
+): VerificationRun {
+  const base = verificationRun(repository, scenario);
+  const membership = configV2For(repository).plans[mode].suites;
+  const checks = base.checks.filter((check) => membership.includes(check.id));
+  return {
+    ...base,
+    id: `mock-${mode}-${scenario.toLowerCase()}-006`,
+    checks,
+    gate: base.gate && {
+      ...base.gate,
+      summary: {
+        total: checks.length,
+        passed: checks.filter((check) => check.status === 'passed').length,
+        warning: checks.filter((check) => check.status === 'warning').length,
+        failed: checks.filter((check) => check.status === 'failed').length,
+        error: checks.filter((check) => check.status === 'error').length,
+        cancelled: checks.filter((check) => check.status === 'cancelled').length,
+        skipped: checks.filter((check) => check.status === 'skipped').length,
+      },
+    },
+  };
+}
+
 function cancelledVerificationRun(
   repository: string,
   checks: readonly CheckResult[],
@@ -593,6 +623,8 @@ export class MockEngineClient implements EngineClient {
   readonly #profileLatencyMs: number;
   readonly #verificationCheckLatencyMs: number;
   readonly #verificationCancellationBarrier?: Promise<void>;
+  #verificationRefreshBarrier?: Promise<void>;
+  #verificationFinished = false;
   readonly #failMethod?: ProtocolMethod;
   readonly #profileCompleteness: ProjectProfile['completeness'];
   readonly #profileAmbiguous: boolean;
@@ -603,6 +635,9 @@ export class MockEngineClient implements EngineClient {
   readonly #initialApprovalStatus: NonNullable<MockEngineClientOptions['initialApprovalStatus']>;
   readonly #approvalStale: boolean;
   readonly #approvalReviewTestCommand?: string;
+  readonly #outdateApprovalAfterStatusReads?: number;
+  readonly #approvalCanonicalRoot?: string;
+  readonly #approvalStatusReads = new Map<string, number>();
   #approvalStatusBarrier?: Promise<void>;
   readonly #approvalByRepository = new Map<
     string,
@@ -618,6 +653,7 @@ export class MockEngineClient implements EngineClient {
     this.#profileLatencyMs = options.profileLatencyMs ?? this.#latencyMs;
     this.#verificationCheckLatencyMs = options.verificationCheckLatencyMs ?? this.#latencyMs;
     this.#verificationCancellationBarrier = options.verificationCancellationBarrier;
+    this.#verificationRefreshBarrier = options.verificationRefreshBarrier;
     this.#failMethod = options.failMethod;
     this.#profileCompleteness = options.profileCompleteness ?? 'complete';
     this.#profileAmbiguous = options.profileAmbiguous ?? false;
@@ -628,6 +664,8 @@ export class MockEngineClient implements EngineClient {
     this.#initialApprovalStatus = options.initialApprovalStatus ?? 'not-approved';
     this.#approvalStale = options.approvalStale ?? false;
     this.#approvalReviewTestCommand = options.approvalReviewTestCommand;
+    this.#outdateApprovalAfterStatusReads = options.outdateApprovalAfterStatusReads;
+    this.#approvalCanonicalRoot = options.approvalCanonicalRoot;
     this.#approvalStatusBarrier = options.approvalStatusBarrier;
     this.#policyVersion = options.initialPolicyVersion ?? 1;
   }
@@ -638,7 +676,7 @@ export class MockEngineClient implements EngineClient {
       if (initial !== 'not-approved') {
         this.#approvalByRepository.set(repository, {
           id: `mock-approval-${projectName(repository)}`,
-          repositoryRoot: repository,
+          repositoryRoot: this.#approvalCanonicalRoot ?? repository,
           policySchemaVersion: 2,
           digestVersion: 1,
           policyDigest: initial === 'outdated' ? MOCK_OUTDATED_DIGEST : MOCK_EXECUTABLE_DIGEST,
@@ -662,7 +700,7 @@ export class MockEngineClient implements EngineClient {
               ? 'outdated'
               : 'approved';
     return {
-      repositoryRoot: repository,
+      repositoryRoot: this.#approvalCanonicalRoot ?? repository,
       policyPath: `${repository}/.verify/project.yml`,
       policyExists: this.#configExists,
       policyVersion,
@@ -942,6 +980,17 @@ export class MockEngineClient implements EngineClient {
 
       case 'config.approval.status': {
         await approvalStatusBarrier;
+        const reads = (this.#approvalStatusReads.get(repository) ?? 0) + 1;
+        this.#approvalStatusReads.set(repository, reads);
+        if (reads >= (this.#outdateApprovalAfterStatusReads ?? Number.POSITIVE_INFINITY)) {
+          const receipt = this.#approvalByRepository.get(repository);
+          if (receipt && receipt.revokedAt === null) {
+            this.#approvalByRepository.set(repository, {
+              ...receipt,
+              policyDigest: MOCK_OUTDATED_DIGEST,
+            });
+          }
+        }
         return this.#approvalStatus(repository) as ProtocolResultMap[Method];
       }
 
@@ -1042,6 +1091,11 @@ export class MockEngineClient implements EngineClient {
         } as ProtocolResultMap[Method];
 
       case 'gate.latest': {
+        if (this.#verificationFinished && this.#verificationRefreshBarrier) {
+          const barrier = this.#verificationRefreshBarrier;
+          this.#verificationRefreshBarrier = undefined;
+          await barrier;
+        }
         const run = verificationRun(repository, this.#scenario);
         return { runId: run.id, gate: run.gate } as ProtocolResultMap[Method];
       }
@@ -1056,8 +1110,19 @@ export class MockEngineClient implements EngineClient {
         return { runs: runs.slice(0, limit) } as ProtocolResultMap[Method];
       }
 
-      case 'verification.run': {
-        const run = verificationRun(repository, this.#scenario);
+      case 'verification.run':
+      case 'verification.plan.run': {
+        const mode =
+          method === 'verification.plan.run' && 'mode' in params ? params.mode : undefined;
+        if (mode && this.#approvalStatus(repository).status !== 'approved') {
+          throw new EngineRequestError(
+            'APPROVAL_UNAVAILABLE',
+            'Current policy approval is required.',
+          );
+        }
+        const run = mode
+          ? approvedPlanRun(repository, this.#scenario, mode)
+          : verificationRun(repository, this.#scenario);
         const completedResults: CheckResult[] = [];
         const finishCancelled = (checks: readonly CheckResult[]): ProtocolResultMap[Method] => {
           const cancelledRun = cancelledVerificationRun(repository, checks);
@@ -1150,6 +1215,7 @@ export class MockEngineClient implements EngineClient {
           data: { run },
         });
 
+        this.#verificationFinished = true;
         return run as ProtocolResultMap[Method];
       }
     }

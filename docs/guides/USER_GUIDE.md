@@ -26,6 +26,11 @@ the exact reviewed commands and plan membership bound to a semantic digest. You 
 approve or revoke it; a changed command or other executable setting makes the old approval
 outdated. Formatting and comments do not. Approval still does not run any command or plan.
 
+Slice 6D adds approved Quick and Full verification actions. Each action reloads the current
+schema-v2 policy and local approval receipt immediately before running its named suites. Missing,
+stale, or revoked approval blocks execution. The profile-derived plan preview remains read-only;
+the executable suite membership comes from the approved YAML policy.
+
 ## Features
 
 - Opens a local Git repository and summarizes its branch and changed files.
@@ -37,6 +42,7 @@ outdated. Formatting and comments do not. Approval still does not run any comman
   `.verify/project.yml`.
 - Shows whether a schema-v2 executable policy is locally approved, outdated, or revoked; keeps
   approval receipts in local SQLite rather than the repository.
+- Runs only the current approved Quick or Full named suites after rechecking execution authority.
 - Runs configured test, lint, typecheck, build, and other generic commands with live output.
 - Applies deterministic block-or-warn policy to normalized results.
 - Persists recent run history in a local SQLite database.
@@ -89,22 +95,26 @@ running checks from a repository you do not trust.
 5. Review **Verification Plan**. Quick selects eligible test and lint checks; Full also selects
    eligible typecheck and build checks. Expand technical evidence to see why each observed check was
    selected or skipped. This preview has no Run, Apply, Approve, or Save action.
-6. If a configured repository is still at version 1, choose **Review Migration** to inspect a
+6. Review the Git summary and the configured or suggested checks.
+7. If the repository has no configuration, review every suggested command and choose **Initialize
+   project**. This creates `.verify/project.yml` without overwriting an existing file.
+8. Edit `.verify/project.yml` in your editor if a command, timeout, or failure policy needs to change,
+   then choose **Inspect again**.
+9. If a configured repository is still at version 1, choose **Review Migration** to inspect a
    version-2 policy proposal. Read its summary and exact YAML diff before choosing **Apply
    Migration**. Opening a repository or reviewing the preview never rewrites the file. If someone
    edits the source after preview, apply reports a conflict and leaves their edit intact; refresh
    the preview first. Applying migration does not approve or run any command.
-7. For a version-2 policy, review the exact executable commands and Quick/Full suite membership in
-   **Execution Approval**. Choose **Approve** only after reviewing the current digest and commands.
-   Choose **Revoke** to withdraw a current or outdated approval. Approval does not run checks; an
-   external executable-policy edit makes the receipt outdated until explicitly approved again.
-8. Review the Git summary and the configured or suggested checks.
-9. If the repository has no configuration, review every suggested command and choose **Initialize
-   project**. This creates `.verify/project.yml` without overwriting an existing file.
-10. Edit `.verify/project.yml` in your editor if a command, timeout, or failure policy needs to change,
-    then choose **Inspect again**.
-11. Choose **Run verification**. The dashboard shows live output and each completed check.
-12. Read the final gate and its reasons. Select an item under **Recent runs** to reopen persisted
+10. For a version-2 policy, review the exact executable commands and Quick/Full suite membership in
+    **Executable Policy Approval**. Choose **Approve Current Policy** only after reviewing the current digest and commands.
+    Choose **Revoke** to withdraw a current or outdated approval. Approval does not run checks; an
+    external executable-policy edit makes the receipt outdated until explicitly approved again.
+11. Choose **Verify Changes / Quick Verification** or **Full Verification** to run only that mode's
+    approved named suites. If approval is unavailable or outdated, review and approve the current
+    policy first. The engine checks approval again at execution time.
+12. The legacy **Run verification** action still runs all configured named suites under its
+    historical behavior. All actions show live output and each completed check.
+13. Read the final gate and its reasons. Select an item under **Recent runs** to reopen persisted
     evidence, or choose **Return to latest** to leave history view.
 
 Choose **Stop run** to cancel active verification. The application waits for the engine to stop the
@@ -115,7 +125,7 @@ run is deliberately BLOCK, never PASS or WARN.
 
 | Gate      | Meaning                                                                              |
 | --------- | ------------------------------------------------------------------------------------ |
-| **PASS**  | All configured checks passed.                                                        |
+| **PASS**  | All checks selected for that run passed.                                             |
 | **WARN**  | A warn-policy check failed, but no blocking check failed.                            |
 | **BLOCK** | A block-policy check failed, a check was cancelled, or required evidence is missing. |
 
@@ -146,13 +156,14 @@ suites:
 Only commands explicitly listed in this file are executed. `failure_policy: block` makes a failed
 check BLOCK the run; `failure_policy: warn` makes it WARN when no blocking check fails.
 
-Version 2 keeps those named suites and adds proposed Quick/Full suite membership. The migration
-preview shows the exact change before an explicit apply. Migration is a policy-format change, not
-local approval for future smart actions; the existing **Run verification** path still uses the
-named suites rather than automatically executing the proposed plans.
+Version 2 keeps those named suites and adds configured Quick/Full suite membership. This executable
+membership is separate from the read-only, profile-derived **Verification Plan** preview. The
+migration preview shows the exact YAML change before an explicit apply. Migration is a policy-format
+change, not local approval for future smart actions; the existing **Run verification** path still
+uses all named suites rather than the Quick/Full membership.
 Approving the current version-2 executable policy creates a local receipt only. It does not edit
-this YAML, authorize a different repository, or launch a smart plan. The existing configured
-**Run verification** path retains its earlier behavior.
+this YAML or authorize a different repository. Quick and Full actions use only the approved
+membership; the existing configured **Run verification** path retains its earlier behavior.
 
 ## Use the CLI from a development checkout
 
@@ -166,6 +177,8 @@ pnpm verify config migrate "C:\path\to\repository"
 pnpm verify config approval status "C:\path\to\repository"
 pnpm verify inspect "C:\path\to\repository"
 pnpm verify run "C:\path\to\repository"
+pnpm verify quick "C:\path\to\repository"
+pnpm verify full "C:\path\to\repository"
 pnpm verify gate "C:\path\to\repository"
 pnpm verify history "C:\path\to\repository"
 ```
@@ -191,6 +204,10 @@ pnpm verify config approval status "C:\path\to\repository"
 pnpm verify config approval approve "C:\path\to\repository" --expected-digest REVIEWED_SHA256
 pnpm verify config approval revoke "C:\path\to\repository"
 ```
+
+After explicit approval, `pnpm verify quick` runs only Quick membership and `pnpm verify full`
+runs Full membership. Both recheck the current policy and receipt; absent, revoked, or outdated
+approval returns an error without starting a check. Add `--json` for the normalized run or error.
 
 ## Local data
 

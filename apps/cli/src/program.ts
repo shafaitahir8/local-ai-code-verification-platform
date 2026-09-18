@@ -300,6 +300,34 @@ export function createProgram(context: CliContext): Command {
       }
     });
 
+  for (const mode of ['quick', 'full'] as const) {
+    program
+      .command(mode)
+      .description(
+        `Run only the currently approved ${mode === 'quick' ? 'Quick' : 'Full'} policy suites`,
+      )
+      .argument('[repository]', 'path inside the Git repository', '.')
+      .option('--json', 'emit one stable JSON result without progress on stdout')
+      .action(async (repository: string, options: JsonOption) => {
+        const controller = new AbortController();
+        const handleInterrupt = (): void => controller.abort();
+        process.once('SIGINT', handleInterrupt);
+        try {
+          const run = await application.runApprovedVerification({
+            repository,
+            mode,
+            signal: controller.signal,
+            ...(options.json === true ? {} : { onEvent: progressWriter(io) }),
+          });
+          if (options.json === true) writeJson(io, run);
+          else io.writeOut(line(formatRun(run)));
+          io.setExitCode(exitCodeForRun(run));
+        } finally {
+          process.removeListener('SIGINT', handleInterrupt);
+        }
+      });
+  }
+
   program
     .command('gate')
     .description('Return the latest persisted quality gate')

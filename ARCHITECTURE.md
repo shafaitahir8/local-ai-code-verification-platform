@@ -50,8 +50,8 @@ The canonical product reset and delivery sequence are documented in
 **docs/tasks/IMPLEMENTATION-PLAN-POST-V0.1.0.md**. ADR-009 through ADR-014 govern the new authority,
 sensor, configuration, cancellation, provider, and launch boundaries. These are roadmap decisions.
 The package table and primary flows below describe the v0.1.0 system, the implemented Iteration 5
-project-intelligence foundation, and Iteration 6's preview-only planning, explicit policy
-migration, and local approval-state slices; smart execution remains prospective.
+project-intelligence foundation, and Iteration 6's plan preview, explicit policy migration,
+local approval state, and approved Quick/Full execution slices.
 
 Iteration 5 adds portable profile types to **@verify/domain**, a `ProjectProfilerPort` to
 **@verify/core**, and one documented project-intelligence implementation containing the bounded
@@ -201,8 +201,23 @@ discovery exclusions, and overrides remain empty and non-operational in this sli
    temporarily missing or invalid. Neither operation changes YAML or executes a command.
 
 Migration acceptance is distinct from approval. Legacy configured `verify run` remains unchanged;
-future smart actions must check a current receipt before execution. Slice 6C adds authorization
-state only, not those actions or an execution path.
+smart actions must check a current receipt before execution. Slice 6C adds authorization state
+only; slice 6D adds the first execution path.
+
+### Run approved Quick/Full verification (Iteration 6 slice 6D)
+
+1. Core resolves the canonical repository root and loads the current validated schema-v2 policy.
+2. It computes the semantic executable-policy digest and reads the latest local receipt. Missing,
+   invalid, version-1, unapproved, revoked, or outdated policy/receipt state fails before a check
+   or synthetic run record starts.
+3. Core resolves only named suites in the requested Quick or Full membership, in policy order,
+   from that same authorized document. Empty or unresolved membership fails closed.
+4. The existing verification runner, cancellation, gate evaluator, and run repository execute,
+   normalize, and persist the selected checks. The interface does not select commands or infer a
+   quality gate.
+
+The read-only profile-derived plan preview does not itself authorize execution. The legacy
+configured `verification.run` path still executes its named suites under its historical contract.
 
 ### Run verification
 
@@ -272,9 +287,12 @@ graceful verification cancellation, latest gate, and run history. Iteration 5 ad
 `project.profile`, typed `profile.progress` events, and `operation.cancel`; Iteration 6 slice 6A adds
 the read-only `verification.plan` method; slice 6B adds version-aware `config.policy.get` and
 explicit migration preview/apply methods. Slice 6C additively exposes approval status, approve,
-and revoke methods; none is an execution request. Existing protocol-v1 methods and
-`verification.cancel` retain their meaning. A cancellation control frame has its own request ID and targets the correlated
-active request. Accepted profile or plan-preview cancellation terminates with that operation's
+and revoke methods; none is an execution request. Slice 6D adds `verification.plan.run` with a
+Quick/Full mode and the existing streamed check events and persisted run result. Existing
+protocol-v1 methods retain their meaning; `verification.cancel` also targets this new verification
+run without changing its correlation rules. A cancellation control frame has its own request ID
+and targets the correlated active request. Accepted profile or plan-preview cancellation
+terminates with that operation's
 non-persisted cancelled result and creates no verification run. Accepted verification cancellation
 must still end in the original run's persisted `cancelled` terminal result. The native bridge
 applies method-appropriate cancellation validation, bounded shutdown, and Windows Job Object

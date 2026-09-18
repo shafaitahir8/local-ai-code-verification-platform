@@ -325,6 +325,56 @@ describe('protocol request codec', () => {
     expect(decodeRequestLine(encodeRequest(request))).toEqual(request);
   });
 
+  it('round-trips approved Quick/Full execution without changing legacy run frames', () => {
+    for (const mode of ['quick', 'full'] as const) {
+      const request = {
+        protocolVersion: PROTOCOL_VERSION,
+        id: `approved-${mode}`,
+        method: 'verification.plan.run',
+        params: { repository: '/workspace/example', mode },
+      } satisfies ProtocolRequest<'verification.plan.run'>;
+      expect(decodeRequestLine(encodeRequest(request))).toEqual(request);
+      expect(
+        decodeResultLine(
+          'verification.plan.run',
+          encodeResult('verification.plan.run', {
+            protocolVersion: PROTOCOL_VERSION,
+            id: request.id,
+            result: completedRun(),
+          }),
+        ),
+      ).toMatchObject({ id: request.id, result: completedRun() });
+    }
+
+    for (const params of [
+      { repository: '/workspace/example' },
+      { repository: '/workspace/example', mode: 'relevant' },
+      { repository: '/workspace/example', mode: 'quick', command: 'npm test' },
+    ]) {
+      expect(() =>
+        decodeRequestLine(
+          JSON.stringify({
+            protocolVersion: PROTOCOL_VERSION,
+            id: 'invalid-approved-run',
+            method: 'verification.plan.run',
+            params,
+          }),
+        ),
+      ).toThrow(ProtocolDecodeError);
+    }
+
+    expect(
+      decodeRequestLine(
+        encodeRequest({
+          protocolVersion: PROTOCOL_VERSION,
+          id: 'legacy-run',
+          method: 'verification.run',
+          params: { repository: '/workspace/example' },
+        }),
+      ),
+    ).toMatchObject({ method: 'verification.run' });
+  });
+
   it('rejects incompatible versions, unknown methods, extra fields, and malformed params', () => {
     expect(() =>
       decodeRequestLine(

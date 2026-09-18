@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { EngineRequestError, type EngineClient } from '../engine/index.js';
+import {
+  EngineRequestError,
+  type EngineClient,
+  type EngineRequestOptions,
+} from '../engine/index.js';
 import type {
   ApprovalPhase,
   ApprovalStatus,
@@ -67,6 +71,7 @@ export interface DashboardController {
   readonly approvePolicy: () => Promise<void>;
   readonly revokeApproval: () => Promise<void>;
   readonly runVerification: () => Promise<void>;
+  readonly runApprovedVerification: (mode: 'quick' | 'full') => Promise<void>;
   readonly stopVerification: () => void;
   readonly selectHistoryRun: (runId?: string) => void;
 }
@@ -567,28 +572,24 @@ export function useDashboard(
     }
   }, [approval?.receipt?.revokedAt, approvalPhase, client, repository]);
 
-  const runVerification = useCallback(async () => {
-    if (!repository || !config?.exists) {
-      return;
-    }
+  const executeVerification = useCallback(
+    async (selectedRepository: string, generation: number, mode?: 'quick' | 'full') => {
+      if (runController.current) return;
+      const controller = new AbortController();
+      runController.current = controller;
+      setRunPhase('running');
+      setError(undefined);
+      setSelectedHistoryId(undefined);
+      setLiveChecks([]);
+      setOutput('');
+      setLiveAnnouncement(
+        mode
+          ? `${mode === 'quick' ? 'Quick' : 'Full'} verification started.`
+          : 'Verification started.',
+      );
 
-    const controller = new AbortController();
-    const generation = loadGeneration.current;
-    const selectedRepository = repository;
-    runController.current?.abort();
-    runController.current = controller;
-    setRunPhase('running');
-    setError(undefined);
-    setSelectedHistoryId(undefined);
-    setLiveChecks([]);
-    setOutput('');
-    setLiveAnnouncement('Verification started.');
-
-    try {
-      const run = await client.request(
-        'verification.run',
-        { repository },
-        {
+      try {
+        const options: EngineRequestOptions = {
           signal: controller.signal,
           onEvent: (event) => {
             if (generation !== loadGeneration.current || runController.current !== controller) {
@@ -637,45 +638,133 @@ export function useDashboard(
                 break;
             }
           },
-        },
-      );
+        };
+        const run = mode
+          ? await client.request(
+              'verification.plan.run',
+              { repository: selectedRepository, mode },
+              options,
+            )
+          : await client.request('verification.run', { repository: selectedRepository }, options);
 
-      if (generation !== loadGeneration.current || runController.current !== controller) {
-        return;
-      }
+        if (generation !== loadGeneration.current || runController.current !== controller) {
+          return;
+        }
 
-      setActiveRun(run);
-      setRunPhase('completed');
-      setLiveAnnouncement(
-        run.status === 'cancelled'
-          ? 'Verification interrupted and saved.'
-          : `Verification completed. Quality gate ${run.gate?.status ?? 'unavailable'}.`,
-      );
+        setActiveRun(run);
 
-      const [nextGate, nextHistory] = await Promise.all([
-        client.request('gate.latest', { repository: selectedRepository }),
-        client.request('runs.list', { repository: selectedRepository, limit: 10 }),
-      ]);
-      if (generation !== loadGeneration.current || runController.current !== controller) {
+        const [nextGate, nextHistory] = await Promise.all([
+          client.request('gate.latest', { repository: selectedRepository }),
+          client.request('runs.list', { repository: selectedRepository, limit: 10 }),
+        ]);
+        if (generation !== loadGeneration.current || runController.current !== controller) {
+          return;
+        }
+        setLatestGate(nextGate);
+        setHistory(nextHistory.runs);
+        setRunPhase('completed');
+        setLiveAnnouncement(
+          run.status === 'cancelled'
+            ? 'Verification interrupted and saved.'
+            : `Verification completed. Quality gate ${run.gate?.status ?? 'unavailable'}.`,
+        );
+      } catch (runError) {
+        if (generation !== loadGeneration.current || runController.current !== controller) {
+          return;
+        }
+        setRunPhase('error');
+        setError(errorMessage(runError));
+        if (
+          mode &&
+          runError instanceof EngineRequestError &&
+          runError.code === 'APPROVAL_UNAVAILABLE'
+        ) {
+          void refreshApprovalStatus(selectedRepository, generation);
+        }
+        setLiveAnnouncement(
+          controller.signal.aborted
+            ? 'Verification interrupted.'
+            : 'Verification failed to execute.',
+        );
+      } finally {
+        if (runController.current === controller) {
+          runController.current = undefined;
+        }
+      }
+    },
+    [client, refreshApprovalStatus],
+  );
+
+  const runVerification = useCallback(async () => {
+    if (!repository || !config?.exists || selectedHistoryId) return;
+    await executeVerification(repository, loadGeneration.current);
+  }, [config?.exists, executeVerification, repository, selectedHistoryId]);
+
+  const runApprovedVerification = useCallback(
+    async (mode: 'quick' | 'full') => {
+      if (
+        !repository ||
+        loadPhase !== 'ready' ||
+        approvalPhase !== 'ready' ||
+        approval?.status !== 'approved' ||
+        selectedHistoryId ||
+        runController.current
+      )
         return;
+
+      const selectedRepository = repository;
+      const repositoryGeneration = loadGeneration.current;
+      const operationGeneration = approvalGeneration.current + 1;
+      approvalGeneration.current = operationGeneration;
+      setApproval(undefined);
+      setApprovalPhase('loading');
+      setApprovalError(undefined);
+      setError(undefined);
+      setLiveAnnouncement('Checking the current executable policy approval before verification.');
+
+      try {
+        const currentApproval = await client.request('config.approval.status', {
+          repository: selectedRepository,
+        });
+        if (
+          repositoryGeneration !== loadGeneration.current ||
+          operationGeneration !== approvalGeneration.current
+        )
+          return;
+        setApproval(currentApproval);
+        setApprovalPhase('ready');
+        if (currentApproval.status !== 'approved') {
+          setError(
+            'The executable policy is not currently approved. Review and approve it before verification.',
+          );
+          setLiveAnnouncement(
+            'Verification was not started because the current policy is not approved.',
+          );
+          return;
+        }
+        await executeVerification(selectedRepository, repositoryGeneration, mode);
+      } catch (approvalRequestError) {
+        if (
+          repositoryGeneration !== loadGeneration.current ||
+          operationGeneration !== approvalGeneration.current
+        )
+          return;
+        setApproval(undefined);
+        setApprovalPhase('error');
+        setApprovalError(errorMessage(approvalRequestError));
+        setLiveAnnouncement('Approval could not be confirmed. Verification was not started.');
       }
-      setLatestGate(nextGate);
-      setHistory(nextHistory.runs);
-    } catch (runError) {
-      if (generation !== loadGeneration.current || runController.current !== controller) {
-        return;
-      }
-      setRunPhase('error');
-      setError(errorMessage(runError));
-      setLiveAnnouncement(
-        controller.signal.aborted ? 'Verification interrupted.' : 'Verification failed to execute.',
-      );
-    } finally {
-      if (runController.current === controller) {
-        runController.current = undefined;
-      }
-    }
-  }, [client, config?.exists, repository]);
+    },
+    [
+      approval,
+      approvalPhase,
+      client,
+      executeVerification,
+      loadPhase,
+      repository,
+      selectedHistoryId,
+    ],
+  );
 
   const stopVerification = useCallback(() => {
     const controller = runController.current;
@@ -735,6 +824,7 @@ export function useDashboard(
     approvePolicy,
     revokeApproval,
     runVerification,
+    runApprovedVerification,
     stopVerification,
     selectHistoryRun,
   };
