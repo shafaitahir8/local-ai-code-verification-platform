@@ -339,6 +339,56 @@ describe('VerifierApplication', () => {
     expect(ports.saved).toEqual([run]);
   });
 
+  it('persists cancellation accepted while an unapproved policy receipt is loading', async () => {
+    const ports = dependencies();
+    ports.configuration.loadPolicy = async () => executableConfig;
+    let releaseReceiptLookup: () => void = () => undefined;
+    let markReceiptLookupStarted: () => void = () => undefined;
+    const receiptLookupStarted = new Promise<void>((resolve) => {
+      markReceiptLookupStarted = resolve;
+    });
+    const receiptLookupBarrier = new Promise<void>((resolve) => {
+      releaseReceiptLookup = resolve;
+    });
+    ports.approvals.getLatestApprovalReceipt = async () => {
+      markReceiptLookupStarted();
+      await receiptLookupBarrier;
+      return null;
+    };
+    const execute = vi.fn(async (request: Parameters<VerificationExecutorPort['run']>[0]) => {
+      expect(request.checks).toEqual([]);
+      expect(request.signal?.aborted).toBe(true);
+      return {
+        startedAt: '2026-01-01T00:00:00.000Z',
+        completedAt: '2026-01-01T00:00:00.000Z',
+        durationMs: 0,
+        interrupted: true,
+        results: [],
+      };
+    });
+    ports.verification.run = execute;
+    const application = new VerifierApplication(ports);
+    const controller = new AbortController();
+
+    const pending = application.runApprovedVerification({
+      repository: root,
+      mode: 'quick',
+      signal: controller.signal,
+    });
+    await receiptLookupStarted;
+    controller.abort();
+    releaseReceiptLookup();
+    const run = await pending;
+
+    expect(execute).toHaveBeenCalledOnce();
+    expect(run).toMatchObject({
+      status: 'cancelled',
+      checks: [],
+      gate: { status: 'BLOCK' },
+    });
+    expect(ports.saved).toEqual([run]);
+  });
+
   it('requires migration before approval and never approves during migration', async () => {
     const ports = dependencies();
     const application = new VerifierApplication(ports);

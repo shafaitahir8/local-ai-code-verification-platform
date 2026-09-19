@@ -439,9 +439,10 @@ function historyFor(repository) {
   return JSON.parse(run(['history', repository, '--json'], 0));
 }
 
-async function assertApprovedCancellation(repository) {
-  const runId = 'outside-checkout-approved-cancel';
-  const cancelId = 'outside-checkout-approved-cancel-control';
+async function assertApprovedCancellation(repository, immediateBeforeAuthorization = false) {
+  const qualifier = immediateBeforeAuthorization ? 'preauthorization' : 'active';
+  const runId = `outside-checkout-approved-cancel-${qualifier}`;
+  const cancelId = `outside-checkout-approved-cancel-control-${qualifier}`;
   const child = spawn(engine, ['protocol'], {
     cwd: launchDir,
     env: environment,
@@ -482,6 +483,7 @@ async function assertApprovedCancellation(repository) {
             const frame = JSON.parse(line);
             frames.push(frame);
             if (
+              !immediateBeforeAuthorization &&
               !cancelSent &&
               frame.id === runId &&
               frame.event === 'check.output' &&
@@ -518,6 +520,17 @@ async function assertApprovedCancellation(repository) {
         params: { repository, mode: 'quick' },
       })}\n`,
     );
+    if (immediateBeforeAuthorization) {
+      cancelSent = true;
+      child.stdin.end(
+        `${JSON.stringify({
+          protocolVersion: 1,
+          id: cancelId,
+          method: 'verification.cancel',
+          params: { targetRequestId: runId },
+        })}\n`,
+      );
+    }
   });
 
   if (exitCode !== 0 || stderr !== '' || !cancelSent) {
@@ -534,8 +547,9 @@ async function assertApprovedCancellation(repository) {
     terminals.length !== 1 ||
     cancelled?.status !== 'cancelled' ||
     cancelled.gate?.status !== 'BLOCK' ||
-    cancelled.checks?.[0]?.id !== 'slow' ||
-    cancelled.checks[0].status !== 'cancelled' ||
+    (immediateBeforeAuthorization
+      ? cancelled.checks?.length !== 0
+      : cancelled.checks?.[0]?.id !== 'slow' || cancelled.checks[0].status !== 'cancelled') ||
     completed?.data?.run?.id !== cancelled.id ||
     frames.some(
       (frame) =>
@@ -670,6 +684,13 @@ try {
   if (historyFor(approved.repository).length !== 0) {
     throw new Error('Unapproved plan execution created run history.');
   }
+
+  const preauthorizationCancellation = createApprovedPlanRepository('preauthorization');
+  await assertApprovedCancellation(preauthorizationCancellation.repository, true);
+  if (historyFor(preauthorizationCancellation.repository).length !== 1) {
+    throw new Error('Accepted pre-authorization cancellation was not persisted exactly once.');
+  }
+
   const approval = JSON.parse(
     run(['config', 'approval', 'status', approved.repository, '--json'], 0),
   );
@@ -752,7 +773,7 @@ try {
   }
 
   process.stdout.write(
-    `Windows engine smoke passed for ${engine}: eight-profile matrix/cancellation, approved Quick/Full and fail-closed approval, approved-run cancellation, PASS/WARN/BLOCK, history, protocol argv, and no Node.js on PATH.\n`,
+    `Windows engine smoke passed for ${engine}: eight-profile matrix/cancellation, approved Quick/Full and fail-closed approval, active and pre-authorization approved-run cancellation, PASS/WARN/BLOCK, history, protocol argv, and no Node.js on PATH.\n`,
   );
 } finally {
   rmSync(smokeRoot, { recursive: true, force: true });

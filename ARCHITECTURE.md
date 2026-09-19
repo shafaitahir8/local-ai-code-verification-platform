@@ -210,6 +210,10 @@ only; slice 6D adds the first execution path.
 2. It computes the semantic executable-policy digest and reads the latest local receipt. Missing,
    invalid, version-1, unapproved, revoked, or outdated policy/receipt state fails before a check
    or synthetic run record starts.
+   If correlated verification cancellation was accepted while these asynchronous authorization
+   reads were pending, cancellation takes precedence after the canonical root is known: core runs
+   no suite and persists an empty cancelled BLOCK result through the existing verification path.
+   This interruption evidence does not authorize the policy or any command.
 3. Core resolves only named suites in the requested Quick or Full membership, in policy order,
    from that same authorized document. Empty or unresolved membership fails closed.
 4. The existing verification runner, cancellation, gate evaluator, and run repository execute,
@@ -292,9 +296,10 @@ Quick/Full mode and the existing streamed check events and persisted run result.
 protocol-v1 methods retain their meaning; `verification.cancel` also targets this new verification
 run without changing its correlation rules. A cancellation control frame has its own request ID
 and targets the correlated active request. Accepted profile or plan-preview cancellation
-terminates with that operation's
-non-persisted cancelled result and creates no verification run. Accepted verification cancellation
-must still end in the original run's persisted `cancelled` terminal result. The native bridge
+terminates with that operation's non-persisted cancelled result and creates no verification run.
+Accepted verification cancellation must still end in the original run's persisted `cancelled`
+terminal result, including when an approved-plan request is interrupted before authorization
+finishes. The native bridge
 applies method-appropriate cancellation validation, bounded shutdown, and Windows Job Object
 containment if cooperative cancellation or normal engine exit fails.
 

@@ -5159,3 +5159,171 @@ Next safe step:
 
 - Commit and push this journal-only CI checkpoint without amending the tested 6D commit, then
   reassess the remaining Iteration 6 acceptance scope before starting any new product work.
+
+## 2026-09-19 — Follow-up CI closed; cancellation edge assessment start
+
+Status: IN PROGRESS
+
+Completed:
+
+- Confirmed documentation-only CI run `35332287336` completed successfully for commit
+  `07b17649653999e0e4ca6c9bf850c526a122fe81`.
+- Recovered a clean `main` matching `origin/main`; `v0.1.0` remains unchanged and no Iteration 7
+  work exists.
+
+Affected:
+
+- Recovery journal only; cancellation behavior is under read-only assessment.
+
+Validated:
+
+- Ubuntu (`105559116292`), Windows (`105559116572`), macOS (`105559116584`), and Native Windows
+  x64 (`105560182206`) all passed. The native job completed SEA/no-Node smoke, locked Rust gates,
+  NSIS packaging, outside-checkout installed smoke, lockfile verification, and artifact upload.
+
+Remaining:
+
+- Add a focused regression test for cancellation arriving before approved-run authorization
+  completes, classify the result, and change production behavior only if the test demonstrates a
+  contract defect.
+
+Next safe step:
+
+- Exercise an immediately cancelled, unapproved `verification.plan.run` through the protocol and
+  compare its acknowledgement and terminal frame with the persisted-cancellation contract.
+
+## 2026-09-19 — Pre-authorization cancellation contract repaired
+
+Status: IN PROGRESS
+
+Completed:
+
+- Added a deterministic protocol regression for cancellation accepted while an unapproved smart
+  run is still authorizing. The test first reproduced an `accepted: true` acknowledgement followed
+  by `APPROVAL_UNAVAILABLE`, confirming a terminal-contract defect without an authorization bypass.
+- Core now observes cancellation after each asynchronous authorization boundary and persists one
+  empty cancelled BLOCK run through the existing runner/history path. No policy command executes.
+- Extended the SEA smoke matrix to cover this pre-authorization cancellation path.
+
+Affected:
+
+- Core approved-run orchestration, CLI protocol regression coverage, Windows SEA smoke, and
+  cancellation documentation.
+
+Validated:
+
+- Core lint/typecheck and 37 tests passed. CLI lint/typecheck and all 37 tests passed, including the
+  new correlated cancellation case. The original failing result was retained in the session
+  evidence before the production fix.
+
+Remaining:
+
+- Run full workspace gates, applicable Rust validation, rebuild the SEA engine, and execute the
+  updated outside-checkout/no-Node smoke before committing.
+
+Next safe step:
+
+- Start the sequential full regression gate, preserving the established distinction between the
+  earlier default-timeout history and this validation run.
+
+## 2026-09-19 — Pre-authorization cancellation full regression complete
+
+Status: IN PROGRESS
+
+Completed:
+
+- Finished the full workspace regression for the narrow cancellation-contract repair.
+- Preserved the historical distinction that the earlier 6D default test attempt timed out under
+  host load; the current post-fix default workspace test command completed successfully.
+
+Affected:
+
+- Validation record only; production scope remains limited to core cancellation observation before
+  approved-run authorization completes, its tests, smoke coverage, and documentation.
+
+Validated:
+
+- Workspace format, lint, typecheck, tests (24/24 tasks), all 13 builds, and `git diff --check`
+  passed. Core passed 37 tests, CLI passed 37 tests, and desktop passed 61 tests.
+
+Remaining:
+
+- Run the locked Rust/native gates, rebuild the Windows SEA sidecar, and execute the updated
+  outside-checkout/no-Node smoke before the final Git audit.
+
+Next safe step:
+
+- Validate the unchanged native bridge against the repaired terminal contract, then rebuild and
+  smoke-test the self-contained engine with the new pre-authorization cancellation scenario.
+
+## 2026-09-19 — Pre-authorization cancellation native and SEA validation complete
+
+Status: IN PROGRESS
+
+Completed:
+
+- Validated the unchanged Rust bridge against the repaired accepted-cancellation terminal contract.
+- Rebuilt the Windows x64 self-contained engine and exercised the extended cancellation matrix
+  outside the checkout with Node.js absent from the child `PATH`.
+
+Affected:
+
+- Native validation and Windows SEA smoke evidence; no Rust/native production source changed.
+
+Validated:
+
+- Cargo format/check/strict Clippy passed, and all 14 Rust tests passed.
+- The SEA smoke passed the eight-profile matrix, approved Quick/Full execution, missing/stale/revoked
+  approval blocking, approved-suite selection, active-run cancellation, pre-authorization
+  cancellation, PASS/WARN/BLOCK, history, protocol argv, and no-Node runtime checks.
+
+Remaining:
+
+- Complete the tracked/untracked/ignored-output audit, review the entire patch, stage only the
+  intentional follow-up, commit it separately, and push it to `origin/main`.
+
+Next safe step:
+
+- Inspect Git status and the complete diff, confirm generated SEA/native outputs remain ignored,
+  then perform the cached-diff review and whitespace check before committing.
+
+## 2026-09-19 — Follow-up CI and pre-authorization cancellation assessment complete
+
+Status: COMPLETE
+
+Completed:
+
+- Closed documentation-only hosted CI run `35332287336` as fully green.
+- Classified the queued pre-authorization cancellation edge as a terminal-contract defect, not an
+  approval bypass, and repaired it without broadening execution authority.
+- Added deterministic core/protocol and Windows SEA coverage proving accepted cancellation executes
+  no policy command and persists one empty cancelled BLOCK run.
+
+Affected:
+
+- Core approved-run orchestration, CLI protocol integration coverage, Windows SEA smoke,
+  architecture/package/task documentation, and this recovery journal. No native source or
+  Iteration 7 functionality changed.
+
+Validated:
+
+- Hosted follow-up CI passed Ubuntu, Windows, macOS, and native Windows x64 jobs, including NSIS
+  and installed-app smoke.
+- Local format, lint, typecheck, the current default workspace test command (24/24 tasks), all 13
+  builds, and whitespace checks passed. The earlier 6D default-test timeout under host load remains
+  accurately recorded; it is not rewritten as a pass.
+- Cargo format/check/strict Clippy and all 14 Rust tests passed. The rebuilt no-Node SEA smoke passed
+  active and pre-authorization cancellation, approval fail-closed cases, approved Quick/Full,
+  PASS/WARN/BLOCK, and history checks outside the checkout.
+- The final scope audit found no untracked or lockfile changes; SEA, Rust, and build outputs remain
+  ignored, and `v0.1.0` remains unchanged.
+
+Remaining:
+
+- Commit this validated follow-up separately and push it to `origin/main`. No Iteration 7 work has
+  started.
+
+Next safe step:
+
+- Stage only the nine intentional source/test/documentation files, review the cached patch and
+  whitespace check, commit, push, and verify local `HEAD` equals `origin/main` with a clean tree.

@@ -48,6 +48,9 @@ Tests, risk scoring, test generation, natural-language configuration, and Iterat
 - Editing any executable policy field after approval requires explicit reapproval.
 - Cancellation, PASS/WARN/BLOCK, history, and CLI/desktop/core/protocol equivalence use the
   existing deterministic execution path.
+- A cancellation accepted while approved-run authorization is pending executes no command and
+  persists one empty cancelled BLOCK run, preserving the existing verification-cancellation
+  terminal contract without granting policy approval.
 - Version-1 and existing configured verification, profile, plan preview, migration, and approval
   contracts continue to behave as before.
 - Full workspace and applicable Rust/native/package validation pass before closing the slice.

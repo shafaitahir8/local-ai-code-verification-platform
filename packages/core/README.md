@@ -67,6 +67,9 @@ persistence by the injected run repository.
 - Approved Quick/Full execution fails before invoking the runner or persisting history if policy,
   receipt, or mode membership is missing, invalid, stale, or revoked. Legacy configured
   `runVerification` keeps its version-1/version-2 named-suite behavior.
+- Once correlated cancellation has been accepted, an abort observed at an asynchronous
+  authorization boundary completes through the existing runner with no selected checks and
+  persists a cancelled BLOCK run. It does not approve or execute the unavailable policy.
 
 ## Security and privacy
 

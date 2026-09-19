@@ -18,6 +18,7 @@ import {
   validateProjectConfigV2,
 } from '@verify/config';
 import type {
+  ApprovalReceipt,
   PolicyApprovalStatus,
   GateResult,
   ProjectProfileProgress,
@@ -352,10 +353,21 @@ export class VerifierApplication {
     request: RunApprovedVerificationRequest,
   ): Promise<VerificationRun> {
     const repositoryRoot = await this.#repository.resolveRoot(request.repository);
+    const cancelledBeforePolicy = this.#completeCancelledVerificationIfRequested(
+      repositoryRoot,
+      request,
+    );
+    if (cancelledBeforePolicy !== undefined) return cancelledBeforePolicy;
+
     let policy: ProjectConfigV1 | ProjectConfigV2;
     try {
       policy = await this.#configuration.loadPolicy(repositoryRoot);
     } catch (error) {
+      const cancelledDuringPolicy = this.#completeCancelledVerificationIfRequested(
+        repositoryRoot,
+        request,
+      );
+      if (cancelledDuringPolicy !== undefined) return cancelledDuringPolicy;
       if (error instanceof ConfigNotFoundError) {
         throw new PolicyApprovalUnavailableError('policy-missing', 'execute');
       }
@@ -364,12 +376,34 @@ export class VerifierApplication {
       }
       throw error;
     }
+    const cancelledAfterPolicy = this.#completeCancelledVerificationIfRequested(
+      repositoryRoot,
+      request,
+    );
+    if (cancelledAfterPolicy !== undefined) return cancelledAfterPolicy;
+
     if (policy.version !== 2) {
       throw new PolicyApprovalUnavailableError('migration-required', 'execute');
     }
     const validated = validateProjectConfigV2(policy);
     const currentDigest = digestExecutablePolicy(validated);
-    const receipt = await this.#approvals.getLatestApprovalReceipt(repositoryRoot);
+    let receipt: ApprovalReceipt | null;
+    try {
+      receipt = await this.#approvals.getLatestApprovalReceipt(repositoryRoot);
+    } catch (error) {
+      const cancelledDuringReceipt = this.#completeCancelledVerificationIfRequested(
+        repositoryRoot,
+        request,
+      );
+      if (cancelledDuringReceipt !== undefined) return cancelledDuringReceipt;
+      throw error;
+    }
+    const cancelledAfterReceipt = this.#completeCancelledVerificationIfRequested(
+      repositoryRoot,
+      request,
+    );
+    if (cancelledAfterReceipt !== undefined) return cancelledAfterReceipt;
+
     if (receipt === null) {
       throw new PolicyApprovalUnavailableError('not-approved', 'execute');
     }
@@ -408,6 +442,14 @@ export class VerifierApplication {
     // The selected immutable command snapshot comes from the just-authorized durable policy.
     // No await occurs between the receipt comparison and handoff to the existing runner.
     return this.#executeVerification(repositoryRoot, selected, request);
+  }
+
+  #completeCancelledVerificationIfRequested(
+    repositoryRoot: string,
+    request: Omit<RunVerificationRequest, 'repository'>,
+  ): Promise<VerificationRun> | undefined {
+    if (request.signal?.aborted !== true) return undefined;
+    return this.#executeVerification(repositoryRoot, [], request);
   }
 
   async #executeVerification(

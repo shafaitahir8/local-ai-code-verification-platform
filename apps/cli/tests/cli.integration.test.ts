@@ -1871,6 +1871,98 @@ describe('built child-process protocol', () => {
     expect(history).toContainEqual(terminal.result);
   }, 15_000);
 
+  it('persists accepted cancellation while an unapproved smart run is still authorizing', async () => {
+    const { repository, database } = await fixture('basic-pass');
+    const commandMarker = join(repository, 'pre-authorization-command.marker');
+    await withDatabasePath(database, async () => {
+      const composition = createApplicationComposition();
+      openCompositions.push(composition);
+      const preview = await composition.application.previewProjectConfigMigration(repository);
+      await composition.application.applyProjectConfigMigration({
+        repository,
+        expectedSourceDigest: preview.sourceDigest,
+        expectedTargetDigest: preview.targetDigest,
+      });
+      const policyPath = join(repository, '.verify', 'project.yml');
+      const policy = await readFile(policyPath, 'utf8');
+      await writeFile(
+        policyPath,
+        policy.replace('command: npm test', 'command: node scripts/pre-authorization-command.mjs'),
+      );
+      await writeFile(
+        join(repository, 'scripts', 'pre-authorization-command.mjs'),
+        [
+          "import { writeFileSync } from 'node:fs';",
+          "writeFileSync(process.env.VERIFY_PREAUTH_MARKER, 'executed');",
+          '',
+        ].join('\n'),
+      );
+    });
+
+    const protocol = startProtocolProcess(database, {
+      VERIFY_PREAUTH_MARKER: commandMarker,
+    });
+    const runRequest = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'unapproved-pre-authorization-run',
+      method: 'verification.plan.run',
+      params: { repository, mode: 'quick' },
+    } satisfies ProtocolRequest<'verification.plan.run'>;
+    const cancelRequest = {
+      protocolVersion: PROTOCOL_VERSION,
+      id: 'cancel-unapproved-pre-authorization-run',
+      method: 'verification.cancel',
+      params: { targetRequestId: runRequest.id },
+    } satisfies ProtocolRequest<'verification.cancel'>;
+
+    protocol.send(runRequest);
+    protocol.send(cancelRequest);
+
+    const cancellation = decodeResultLine(
+      'verification.cancel',
+      (
+        await protocol.waitFor(
+          ({ message }) => message.id === cancelRequest.id && 'result' in message,
+          'unapproved pre-authorization cancellation acknowledgement',
+        )
+      ).line,
+    );
+    expect(cancellation).toMatchObject({ result: { accepted: true } });
+
+    const terminal = decodeResultLine(
+      'verification.plan.run',
+      (
+        await protocol.waitFor(
+          ({ message }) =>
+            message.id === runRequest.id && ('result' in message || 'error' in message),
+          'unapproved pre-authorization cancelled terminal result',
+        )
+      ).line,
+    );
+    if ('error' in terminal) throw new Error(terminal.error.message);
+    expect(terminal.result).toMatchObject({
+      status: 'cancelled',
+      checks: [],
+      gate: { status: 'BLOCK' },
+    });
+    expect(
+      protocol.records.some(
+        ({ message }) =>
+          message.id === runRequest.id &&
+          'event' in message &&
+          (message.event === 'check.started' || message.event === 'check.output'),
+      ),
+    ).toBe(false);
+
+    const execution = await protocol.finish();
+    expect(execution).toMatchObject({ code: 0, stderr: '' });
+    await expect(readFile(commandMarker, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    const history = JSON.parse(
+      (await runCliProcess(['history', repository, '--json'], database)).stdout,
+    ) as VerificationRun[];
+    expect(history).toContainEqual(terminal.result);
+  }, 15_000);
+
   it('cancels during command output, persists the terminal run, and starts no later checks', async () => {
     const { repository, database } = await fixture('basic-pass');
     const laterCheckMarker = join(repository, 'later-check.marker');

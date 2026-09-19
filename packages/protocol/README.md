@@ -100,6 +100,9 @@ The legacy `verification.run` request and result remain unchanged.
 the active `verification.run` or `verification.plan.run` request in `params.targetRequestId`. Its terminal result is
 `{ "accepted": true }` only when that run accepted its first cancellation request; unknown,
 already-cancelled, and completed targets return `false`.
+An accepted cancellation of `verification.plan.run` always terminates as a persisted cancelled
+run, even when cancellation arrives while policy approval is still being read; no policy command
+executes in that case.
 
 `operation.cancel` uses the same target-request correlation and acknowledgement rules for any
 registered cancellable operation. `verification.cancel` remains supported with its existing
